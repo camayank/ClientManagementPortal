@@ -36,7 +36,7 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").unique().notNull(),
   password: text("password").notNull(),
-  role: text("role", { enum: ["admin", "client"] }).default("client").notNull(), 
+  role: text("role", { enum: ["admin", "client"] }).default("client").notNull(),
   fullName: text("full_name"),
   email: text("email"),
   lastLogin: timestamp("last_login"),
@@ -77,6 +77,31 @@ export const documents = pgTable("documents", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// New Milestone tables
+export const milestones = pgTable("milestones", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => projects.id).notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: text("status", { enum: ["pending", "in_progress", "completed", "delayed"] }).default("pending").notNull(),
+  dueDate: timestamp("due_date").notNull(),
+  completedAt: timestamp("completed_at"),
+  progress: integer("progress").default(0),
+  priority: text("priority", { enum: ["low", "medium", "high"] }).default("medium"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const milestoneUpdates = pgTable("milestone_updates", {
+  id: serial("id").primaryKey(),
+  milestoneId: integer("milestone_id").references(() => milestones.id).notNull(),
+  updatedBy: integer("updated_by").references(() => users.id).notNull(),
+  previousStatus: text("previous_status"),
+  newStatus: text("new_status"),
+  comment: text("comment"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   roles: many(userRoles),
@@ -110,6 +135,7 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
     references: [users.id],
   }),
   documents: many(documents),
+  milestones: many(milestones),
 }));
 
 export const documentsRelations = relations(documents, ({ one }) => ({
@@ -127,6 +153,26 @@ export const documentsRelations = relations(documents, ({ one }) => ({
   }),
 }));
 
+export const milestonesRelations = relations(milestones, ({ one, many }) => ({
+  project: one(projects, {
+    fields: [milestones.projectId],
+    references: [projects.id],
+  }),
+  updates: many(milestoneUpdates),
+}));
+
+export const milestoneUpdatesRelations = relations(milestoneUpdates, ({ one }) => ({
+  milestone: one(milestones, {
+    fields: [milestoneUpdates.milestoneId],
+    references: [milestones.id],
+  }),
+  updatedByUser: one(users, {
+    fields: [milestoneUpdates.updatedBy],
+    references: [users.id],
+  }),
+}));
+
+
 // Schema validation
 export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
@@ -140,6 +186,10 @@ export const insertRoleSchema = createInsertSchema(roles);
 export const selectRoleSchema = createSelectSchema(roles);
 export const insertPermissionSchema = createInsertSchema(permissions);
 export const selectPermissionSchema = createSelectSchema(permissions);
+export const insertMilestoneSchema = createInsertSchema(milestones);
+export const selectMilestoneSchema = createSelectSchema(milestones);
+export const insertMilestoneUpdateSchema = createInsertSchema(milestoneUpdates);
+export const selectMilestoneUpdateSchema = createSelectSchema(milestoneUpdates);
 
 // Types
 export type User = typeof users.$inferSelect;
@@ -154,3 +204,7 @@ export type Role = typeof roles.$inferSelect;
 export type NewRole = typeof roles.$inferInsert;
 export type Permission = typeof permissions.$inferSelect;
 export type NewPermission = typeof permissions.$inferInsert;
+export type Milestone = typeof milestones.$inferSelect;
+export type NewMilestone = typeof milestones.$inferInsert;
+export type MilestoneUpdate = typeof milestoneUpdates.$inferSelect;
+export type NewMilestoneUpdate = typeof milestoneUpdates.$inferInsert;

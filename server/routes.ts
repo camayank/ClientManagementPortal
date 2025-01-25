@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketService } from "./websocket/server";
 import { setupAuth } from "./auth";
 import { db } from "@db";
-import { clients, documents, projects, users } from "@db/schema";
+import { clients, documents, projects, users, milestones, milestoneUpdates } from "@db/schema";
 import multer from "multer";
 import { eq, and, sql } from "drizzle-orm";
 import { requirePermission } from "./middleware/check-permission";
@@ -19,31 +19,22 @@ const upload = multer({
   },
 });
 
-// Export the WebSocket service instance
 export let wsService: WebSocketService;
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
-
-  // Create HTTP server
   const httpServer = createServer(app);
-
-  // Initialize WebSocket service
   wsService = new WebSocketService(httpServer);
 
-  // Document management routes with permission checks
   app.post("/api/documents/upload", requirePermission('documents', 'create'), upload.single('file'), async (req, res) => {
     try {
       const user = req.user as any;
-
-      // Get client record for the current user if they are a client
       let clientId: number | null = null;
       if (user.role === 'client') {
         const [clientRecord] = await db.select()
           .from(clients)
           .where(eq(clients.userId, user.id))
           .limit(1);
-
         if (!clientRecord) {
           const [newClientRecord] = await db.insert(clients)
             .values({
@@ -57,8 +48,6 @@ export function registerRoutes(app: Express): Server {
           clientId = clientRecord.id;
         }
       }
-
-      // Create the document record
       const [newDoc] = await db.insert(documents)
         .values({
           name: req.file.originalname,
@@ -69,17 +58,11 @@ export function registerRoutes(app: Express): Server {
           projectId: req.body.projectId ? parseInt(req.body.projectId) : null,
         })
         .returning();
-
-      // Ensure uploads directory exists
       if (!fs.existsSync('uploads')) {
         fs.mkdirSync('uploads', { recursive: true });
       }
-
-      // Move the file to a permanent location
       const permanentPath = path.join('uploads', newDoc.id.toString() + '_' + req.file.originalname);
       fs.renameSync(req.file.path, permanentPath);
-
-      // Update the document with the final path
       await db.update(documents)
         .set({
           metadata: {
@@ -88,10 +71,7 @@ export function registerRoutes(app: Express): Server {
           }
         })
         .where(eq(documents.id, newDoc.id));
-
-      // Send real-time notification
       if (user.role === 'client') {
-        // Notify admins about new document upload
         wsService.broadcastToAdmin({
           type: 'notification',
           payload: {
@@ -105,7 +85,6 @@ export function registerRoutes(app: Express): Server {
           }
         });
       } else {
-        // Notify specific client about document upload
         if (clientId) {
           wsService.sendToUser(clientId, {
             type: 'notification',
@@ -121,11 +100,9 @@ export function registerRoutes(app: Express): Server {
           });
         }
       }
-
       res.json(newDoc);
     } catch (error) {
       console.error("Upload error:", error);
-      // Clean up the temporary file if it exists
       if (req.file && fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path);
       }
@@ -133,7 +110,6 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Add user management routes with permission checks
   app.get("/api/admin/users", requirePermission('users', 'read'), async (req, res) => {
     try {
       const userList = await db.select().from(users);
@@ -146,39 +122,31 @@ export function registerRoutes(app: Express): Server {
 
   app.post("/api/admin/users", requirePermission('users', 'create'), async (req, res) => {
     const { username, password, role, fullName, email } = req.body;
-
     try {
-      // Check if username already exists
       const [existingUser] = await db.select()
         .from(users)
         .where(eq(users.username, username))
         .limit(1);
-
       if (existingUser) {
         return res.status(400).send("Username already exists");
       }
-
-      // Create new user
       const [newUser] = await db.insert(users)
         .values({
           username,
-          password, // Note: This should be hashed in production
+          password, 
           role,
           fullName,
           email,
         })
         .returning();
-
-      // If it's a client user, create a client profile
       if (role === 'client') {
         await db.insert(clients)
           .values({
             userId: newUser.id,
-            company: fullName, // Using fullName as company name initially
+            company: fullName, 
             status: 'active',
           });
       }
-
       res.json(newUser);
     } catch (error) {
       console.error("Error creating user:", error);
@@ -189,13 +157,11 @@ export function registerRoutes(app: Express): Server {
   app.patch("/api/admin/users/:id/reset-password", requirePermission('users', 'update'), async (req, res) => {
     const { id } = req.params;
     const { newPassword } = req.body;
-
     try {
       const [updatedUser] = await db.update(users)
-        .set({ password: newPassword }) // Note: This should be hashed in production
+        .set({ password: newPassword }) 
         .where(eq(users.id, parseInt(id)))
         .returning();
-
       res.json(updatedUser);
     } catch (error) {
       console.error("Error resetting password:", error);
@@ -203,7 +169,6 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Client management routes with permission checks
   app.get("/api/clients", requirePermission('clients', 'read'), async (req, res) => {
     try {
       const clientList = await db.select({
@@ -216,7 +181,6 @@ export function registerRoutes(app: Express): Server {
       })
         .from(clients)
         .leftJoin(users, eq(clients.userId, users.id));
-
       res.json(clientList);
     } catch (error) {
       console.error("Error fetching clients:", error);
@@ -226,18 +190,14 @@ export function registerRoutes(app: Express): Server {
 
   app.post("/api/clients", requirePermission('clients', 'create'), async (req, res) => {
     const { company, email, password } = req.body;
-
     try {
-      // Create user account for client
       const [user] = await db.insert(users)
         .values({
           username: email,
-          password, // Note: This should be hashed in production
+          password, 
           role: 'client',
         })
         .returning();
-
-      // Create client profile
       const [client] = await db.insert(clients)
         .values({
           userId: user.id,
@@ -245,7 +205,6 @@ export function registerRoutes(app: Express): Server {
           status: 'active',
         })
         .returning();
-
       res.json(client);
     } catch (error) {
       console.error("Error creating client:", error);
@@ -256,13 +215,11 @@ export function registerRoutes(app: Express): Server {
   app.patch("/api/clients/:id", requirePermission('clients', 'update'), async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
-
     try {
       const [updatedClient] = await db.update(clients)
         .set({ status })
         .where(eq(clients.id, parseInt(id)))
         .returning();
-
       res.json(updatedClient);
     } catch (error) {
       console.error("Error updating client:", error);
@@ -270,7 +227,6 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Project management routes with permission checks
   app.get("/api/projects", requirePermission('projects', 'read'), async (req, res) => {
     const user = req.user as any;
     let query = db.select({
@@ -284,21 +240,16 @@ export function registerRoutes(app: Express): Server {
     })
       .from(projects)
       .leftJoin(users, eq(projects.assignedTo, users.id));
-
     if (user.role === "client") {
-      // Clients can only see their own projects
       const [clientRecord] = await db.select()
         .from(clients)
         .where(eq(clients.userId, user.id))
         .limit(1);
-
       if (!clientRecord) {
         return res.status(404).send("Client record not found");
       }
-
       query = query.where(eq(projects.clientId, clientRecord.id));
     }
-
     const projectList = await query;
     res.json(projectList);
   });
@@ -306,18 +257,15 @@ export function registerRoutes(app: Express): Server {
   app.post("/api/projects", requirePermission('projects', 'create'), async (req, res) => {
     const { name, lastDate } = req.body;
     const user = req.user as any;
-
     try {
       if (user.role === "client") {
         const [clientRecord] = await db.select()
           .from(clients)
           .where(eq(clients.userId, user.id))
           .limit(1);
-
         if (!clientRecord) {
           return res.status(404).send("Client record not found");
         }
-
         const [newProject] = await db.insert(projects)
           .values({
             name,
@@ -325,10 +273,8 @@ export function registerRoutes(app: Express): Server {
             lastDate: new Date(lastDate),
           })
           .returning();
-
         res.json(newProject);
       } else {
-        // Admin can create projects for any client
         const { clientId } = req.body;
         const [newProject] = await db.insert(projects)
           .values({
@@ -337,7 +283,6 @@ export function registerRoutes(app: Express): Server {
             lastDate: new Date(lastDate),
           })
           .returning();
-
         res.json(newProject);
       }
     } catch (error: any) {
@@ -346,7 +291,6 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Document management routes with permission checks
   app.get("/api/documents", requirePermission('documents', 'read'), async (req, res) => {
     try {
       const user = req.user as any;
@@ -362,22 +306,16 @@ export function registerRoutes(app: Express): Server {
         clientId: documents.clientId,
         projectId: documents.projectId,
       }).from(documents);
-
       if (user.role === 'client') {
-        // Get client's ID first
         const [clientRecord] = await db.select()
           .from(clients)
           .where(eq(clients.userId, user.id))
           .limit(1);
-
         if (!clientRecord) {
           return res.status(404).send("Client record not found");
         }
-
-        // Filter documents by client ID
         query = query.where(eq(documents.clientId, clientRecord.id));
       }
-
       const docs = await query;
       res.json(docs);
     } catch (error) {
@@ -391,44 +329,30 @@ export function registerRoutes(app: Express): Server {
     res.json(docs);
   });
 
-
-  // Modify the documents GET endpoint to handle the new file path structure
   app.get("/api/documents/:id/view", requirePermission('documents', 'read'), async (req, res) => {
     try {
       const docId = parseInt(req.params.id);
       const [doc] = await db.select()
         .from(documents)
         .where(eq(documents.id, docId));
-
       if (!doc) {
         return res.status(404).send("Document not found");
       }
-
-      // Check if user has access to this document
       if ((req.user as any).role !== 'admin') {
         const [clientDoc] = await db.select()
           .from(clients)
           .where(eq(clients.userId, (req.user as any).id));
-
         if (!clientDoc || doc.clientId !== clientDoc.id) {
           return res.status(403).send("Access denied");
         }
       }
-
-      // Get the file path from metadata or construct it
       const filePath = (doc.metadata as any)?.path || path.join('uploads', doc.id.toString() + '_' + doc.name);
-
-      // Check if file exists
       if (!fs.existsSync(filePath)) {
         console.error(`File not found at path: ${filePath}`);
         return res.status(404).send("File not found");
       }
-
-      // Set appropriate headers for viewing
       res.setHeader('Content-Type', doc.type);
       res.setHeader('Content-Disposition', `inline; filename="${doc.name}"`);
-
-      // Stream the file
       const fileStream = fs.createReadStream(filePath);
       fileStream.pipe(res);
     } catch (error) {
@@ -437,43 +361,30 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Add document download route with consistent path handling
   app.get("/api/documents/:id/download", requirePermission('documents', 'read'), async (req, res) => {
     try {
       const docId = parseInt(req.params.id);
       const [doc] = await db.select()
         .from(documents)
         .where(eq(documents.id, docId));
-
       if (!doc) {
         return res.status(404).send("Document not found");
       }
-
-      // Check if user has access to this document
       if ((req.user as any).role !== 'admin') {
         const [clientDoc] = await db.select()
           .from(clients)
           .where(eq(clients.userId, (req.user as any).id));
-
         if (!clientDoc || doc.clientId !== clientDoc.id) {
           return res.status(403).send("Access denied");
         }
       }
-
-      // Get the file path from metadata or construct it
       const filePath = (doc.metadata as any)?.path || path.join('uploads', doc.id.toString() + '_' + doc.name);
-
-      // Check if file exists
       if (!fs.existsSync(filePath)) {
         console.error(`File not found at path: ${filePath}`);
         return res.status(404).send("File not found");
       }
-
-      // Set appropriate headers for download
       res.setHeader('Content-Type', doc.type);
       res.setHeader('Content-Disposition', `attachment; filename="${doc.name}"`);
-
-      // Stream the file
       const fileStream = fs.createReadStream(filePath);
       fileStream.pipe(res);
     } catch (error) {
@@ -482,40 +393,34 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Admin statistics with permission checks
   app.get("/api/admin/stats", requirePermission('stats', 'read'), async (req, res) => {
     try {
       const [totalClients] = await db.select({ count: sql<number>`count(*)` }).from(clients);
       const [activeProjects] = await db.select({ count: sql<number>`count(*)` })
         .from(projects)
         .where(eq(projects.status, 'active'));
-
       const [newClientsThisMonth] = await db.select({ count: sql<number>`count(*)` })
         .from(clients)
         .where(sql`created_at >= date_trunc('month', current_date)`);
-
       const [completedProjectsThisMonth] = await db.select({ count: sql<number>`count(*)` })
         .from(projects)
         .where(and(
           eq(projects.status, 'completed'),
           sql`created_at >= date_trunc('month', current_date)`
         ));
-
       const [activeUsers] = await db.select({ count: sql<number>`count(*)` })
         .from(users)
         .where(sql`last_login >= now() - interval '24 hours'`);
-
       const stats = {
         totalClients: totalClients.count,
         activeProjects: activeProjects.count,
         newClients: newClientsThisMonth.count,
         completedProjects: completedProjectsThisMonth.count,
         activeUsers: activeUsers.count,
-        pendingReviews: 0, // To be implemented with review system
+        pendingReviews: 0, 
         clientsWithPending: 0,
         pendingActions: 0,
       };
-
       res.json(stats);
     } catch (error) {
       console.error("Error fetching admin stats:", error);
@@ -524,18 +429,14 @@ export function registerRoutes(app: Express): Server {
   });
 
 
-  // Add report generation endpoints with permission checks
   app.get("/api/admin/reports", requirePermission('reports', 'read'), async (req, res) => {
     const { type, startDate, endDate } = req.query;
-
     if (!startDate || !endDate) {
       return res.status(400).send("Start and end dates are required");
     }
-
     try {
       const start = parseISO(startDate as string);
       const end = parseISO(endDate as string);
-
       switch (type) {
         case 'documents': {
           const [documentStats] = await db
@@ -545,7 +446,6 @@ export function registerRoutes(app: Express): Server {
             })
             .from(documents)
             .where(sql`created_at between ${start} and ${end}`);
-
           const documentTypes = await db
             .select({
               type: documents.type,
@@ -554,7 +454,6 @@ export function registerRoutes(app: Express): Server {
             .from(documents)
             .where(sql`created_at between ${start} and ${end}`)
             .groupBy(documents.type);
-
           res.json({
             totalDocuments: documentStats.totalDocuments,
             totalSize: documentStats.totalSize,
@@ -565,7 +464,6 @@ export function registerRoutes(app: Express): Server {
           });
           break;
         }
-
         case 'users': {
           const [userStats] = await db
             .select({
@@ -574,7 +472,6 @@ export function registerRoutes(app: Express): Server {
             })
             .from(users)
             .where(sql`last_login >= ${subDays(new Date(), 30)}`);
-
           const loginActivity = await db
             .select({
               date: sql<string>`date_trunc('day', last_login)`,
@@ -584,7 +481,6 @@ export function registerRoutes(app: Express): Server {
             .where(sql`last_login between ${start} and ${end}`)
             .groupBy(sql`date_trunc('day', last_login)`)
             .orderBy(sql`date_trunc('day', last_login)`);
-
           res.json({
             activeUsers: userStats.activeUsers,
             newUsers: userStats.newUsers,
@@ -604,7 +500,6 @@ export function registerRoutes(app: Express): Server {
             })
             .from(projects)
             .where(sql`created_at between ${start} and ${end}`);
-
           const projectsByStatus = await db
             .select({
               status: projects.status,
@@ -613,7 +508,6 @@ export function registerRoutes(app: Express): Server {
             .from(projects)
             .where(sql`created_at between ${start} and ${end}`)
             .groupBy(projects.status);
-
           res.json({
             totalProjects: projectStats.totalProjects,
             activeProjects: projectStats.activeProjects,
@@ -625,7 +519,6 @@ export function registerRoutes(app: Express): Server {
           });
           break;
         }
-
         case 'clients': {
           const [clientStats] = await db
             .select({
@@ -634,7 +527,6 @@ export function registerRoutes(app: Express): Server {
               newClients: sql<number>`count(case when created_at between ${start} and ${end} then 1 end)`,
             })
             .from(clients);
-
           const clientActivity = await db
             .select({
               date: sql<string>`date_trunc('day', documents.created_at)`,
@@ -645,7 +537,6 @@ export function registerRoutes(app: Express): Server {
             .where(sql`documents.created_at between ${start} and ${end}`)
             .groupBy(sql`date_trunc('day', documents.created_at)`)
             .orderBy(sql`date_trunc('day', documents.created_at)`);
-
           res.json({
             totalClients: clientStats.totalClients,
             activeClients: clientStats.activeClients,
@@ -657,7 +548,6 @@ export function registerRoutes(app: Express): Server {
           });
           break;
         }
-
         default:
           res.status(400).send("Invalid report type");
       }
@@ -670,18 +560,14 @@ export function registerRoutes(app: Express): Server {
   app.post("/api/admin/reports/:type/download", requirePermission('reports', 'download'), async (req, res) => {
     const { type } = req.params;
     const { startDate, endDate } = req.body;
-
     if (!startDate || !endDate) {
       return res.status(400).send("Start and end dates are required");
     }
-
     try {
       const start = parseISO(startDate);
       const end = parseISO(endDate);
-
       let data: any[] = [];
       let headers: string[] = [];
-
       switch (type) {
         case 'documents': {
           data = await db
@@ -696,11 +582,9 @@ export function registerRoutes(app: Express): Server {
             .from(documents)
             .leftJoin(users, eq(documents.uploadedBy, users.id))
             .where(sql`documents.created_at between ${start} and ${end}`);
-
           headers = ['ID', 'Name', 'Type', 'Size', 'Created At', 'Uploaded By'];
           break;
         }
-
         case 'users': {
           data = await db
             .select({
@@ -712,20 +596,16 @@ export function registerRoutes(app: Express): Server {
             })
             .from(users)
             .where(sql`created_at between ${start} and ${end}`);
-
           headers = ['ID', 'Username', 'Role', 'Created At', 'Last Login'];
           break;
         }
         default:
           return res.status(400).send("Invalid report type");
       }
-
-      // Generate CSV
       const csv = [
         headers.join(','),
         ...data.map(row => Object.values(row).join(',')),
       ].join('\n');
-
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename=${type}-report.csv`);
       res.send(csv);
@@ -735,42 +615,29 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Add document download route
   app.get("/api/documents/:id/download", requirePermission('documents', 'read'), async (req, res) => {
     try {
       const docId = parseInt(req.params.id);
       const [doc] = await db.select()
         .from(documents)
         .where(eq(documents.id, docId));
-
       if (!doc) {
         return res.status(404).send("Document not found");
       }
-
-      // Check if user has access to this document
       if ((req.user as any).role !== 'admin') {
         const [clientDoc] = await db.select()
           .from(clients)
           .where(eq(clients.userId, (req.user as any).id));
-
         if (!clientDoc || doc.clientId !== clientDoc.id) {
           return res.status(403).send("Access denied");
         }
       }
-
-      // Find the file in uploads directory
       const filePath = path.join('uploads', doc.name);
-
-      // Check if file exists
       if (!fs.existsSync(filePath)) {
         return res.status(404).send("File not found");
       }
-
-      // Set appropriate headers
       res.setHeader('Content-Type', doc.type);
       res.setHeader('Content-Disposition', `attachment; filename="${doc.name}"`);
-
-      // Stream the file
       const fileStream = fs.createReadStream(filePath);
       fileStream.pipe(res);
     } catch (error) {
@@ -787,46 +654,34 @@ export function registerRoutes(app: Express): Server {
           .status(400)
           .send("Invalid input: " + result.error.issues.map(i => i.message).join(", "));
       }
-
       const { username, password, role } = result.data;
-
-      // Prevent admin registration through public endpoint
       if (role === 'admin') {
         return res.status(403).send("Admin accounts can only be created by existing administrators");
       }
-
-      // Check if user already exists
       const [existingUser] = await db
         .select()
         .from(users)
         .where(eq(users.username, username))
         .limit(1);
-
       if (existingUser) {
         return res.status(400).send("Username already exists");
       }
-
-      // Create the new user
       const [newUser] = await db
         .insert(users)
         .values({
           username,
-          password, // Note: In a real app, this should be hashed
-          role: 'client', // Force client role for public registration
+          password, 
+          role: 'client', 
         })
         .returning();
-
-      // Create client record for the new user
       if (role === 'client') {
         await db.insert(clients)
           .values({
             userId: newUser.id,
-            company: username, // Using username as initial company name
+            company: username, 
             status: 'active',
           });
       }
-
-      // Log the user in after registration
       req.login(newUser, (err) => {
         if (err) {
           return next(err);
@@ -843,33 +698,26 @@ export function registerRoutes(app: Express): Server {
 
   app.post("/api/admin/create-first-admin", async (req, res) => {
     try {
-      // Check if any admin exists
       const [existingAdmin] = await db
         .select()
         .from(users)
         .where(eq(users.role, 'admin'))
         .limit(1);
-
       if (existingAdmin) {
         return res.status(400).send("Admin user already exists");
       }
-
       const { username, password } = req.body;
-
       if (!username || !password) {
         return res.status(400).send("Username and password are required");
       }
-
-      // Create the first admin user
       const [adminUser] = await db
         .insert(users)
         .values({
           username,
-          password, // Note: This should be hashed in production
+          password, 
           role: 'admin',
         })
         .returning();
-
       res.json({
         message: "Admin user created successfully",
         user: { id: adminUser.id, username: adminUser.username }
@@ -877,6 +725,176 @@ export function registerRoutes(app: Express): Server {
     } catch (error) {
       console.error("Error creating admin:", error);
       res.status(500).send("Failed to create admin user");
+    }
+  });
+
+  // Milestone Management Routes
+  app.post("/api/projects/:projectId/milestones", requirePermission('projects', 'update'), async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const { title, description, dueDate, priority } = req.body;
+
+      const [project] = await db.select()
+        .from(projects)
+        .where(eq(projects.id, parseInt(projectId)))
+        .limit(1);
+
+      if (!project) {
+        return res.status(404).send("Project not found");
+      }
+
+      const [milestone] = await db.insert(milestones)
+        .values({
+          projectId: parseInt(projectId),
+          title,
+          description,
+          dueDate: new Date(dueDate),
+          priority,
+          status: "pending",
+          progress: 0
+        })
+        .returning();
+
+      await db.insert(milestoneUpdates)
+        .values({
+          milestoneId: milestone.id,
+          updatedBy: (req.user as any).id,
+          previousStatus: null,
+          newStatus: "pending",
+          comment: "Milestone created"
+        });
+
+      wsService.broadcastToProjectMembers(parseInt(projectId), {
+        type: 'milestone_created',
+        payload: {
+          milestone,
+          project: {
+            id: project.id,
+            name: project.name
+          }
+        }
+      });
+
+      res.json(milestone);
+    } catch (error) {
+      console.error("Error creating milestone:", error);
+      res.status(500).send("Failed to create milestone");
+    }
+  });
+
+  app.patch("/api/projects/:projectId/milestones/:id", requirePermission('projects', 'update'), async (req, res) => {
+    try {
+      const { projectId, id } = req.params;
+      const { status, progress, comment } = req.body;
+
+      const [currentMilestone] = await db.select()
+        .from(milestones)
+        .where(and(
+          eq(milestones.id, parseInt(id)),
+          eq(milestones.projectId, parseInt(projectId))
+        ))
+        .limit(1);
+
+      if (!currentMilestone) {
+        return res.status(404).send("Milestone not found");
+      }
+
+      const [updatedMilestone] = await db.update(milestones)
+        .set({
+          status,
+          progress,
+          completedAt: status === 'completed' ? new Date() : null,
+          updatedAt: new Date()
+        })
+        .where(eq(milestones.id, parseInt(id)))
+        .returning();
+
+      await db.insert(milestoneUpdates)
+        .values({
+          milestoneId: parseInt(id),
+          updatedBy: (req.user as any).id,
+          previousStatus: currentMilestone.status,
+          newStatus: status,
+          comment
+        });
+
+      wsService.broadcastToProjectMembers(parseInt(projectId), {
+        type: 'milestone_updated',
+        payload: {
+          milestone: updatedMilestone,
+          update: {
+            previousStatus: currentMilestone.status,
+            newStatus: status,
+            comment
+          }
+        }
+      });
+
+      res.json(updatedMilestone);
+    } catch (error) {
+      console.error("Error updating milestone:", error);
+      res.status(500).send("Failed to update milestone");
+    }
+  });
+
+  app.get("/api/projects/:projectId/milestones", requirePermission('projects', 'read'), async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const projectMilestones = await db.select({
+        id: milestones.id,
+        title: milestones.title,
+        description: milestones.description,
+        status: milestones.status,
+        dueDate: milestones.dueDate,
+        completedAt: milestones.completedAt,
+        progress: milestones.progress,
+        priority: milestones.priority,
+        createdAt: milestones.createdAt,
+        updates: milestoneUpdates,
+      })
+        .from(milestones)
+        .leftJoin(milestoneUpdates, eq(milestones.id, milestoneUpdates.milestoneId))
+        .where(eq(milestones.projectId, parseInt(projectId)))
+        .orderBy(milestones.dueDate);
+
+      res.json(projectMilestones);
+    } catch (error) {
+      console.error("Error fetching milestones:", error);
+      res.status(500).send("Failed to fetch milestones");
+    }
+  });
+
+  app.get("/api/projects/:projectId/milestones/:id", requirePermission('projects', 'read'), async (req, res) => {
+    try {
+      const { projectId, id } = req.params;
+      const [milestone] = await db.select({
+        id: milestones.id,
+        title: milestones.title,
+        description: milestones.description,
+        status: milestones.status,
+        dueDate: milestones.dueDate,
+completedAt: milestones.completedAt,
+        progress: milestones.progress,
+        priority: milestones.priority,
+        createdAt: milestones.createdAt,
+        updates: milestoneUpdates,
+      })
+        .from(milestones)
+        .leftJoin(milestoneUpdates, eq(milestones.id, milestoneUpdates.milestoneId))
+        .where(and(
+          eq(milestones.id, parseInt(id)),
+          eq(milestones.projectId, parseInt(projectId))
+        ))
+        .limit(1);
+
+      if (!milestone) {
+        return res.status(404).send("Milestone not found");
+      }
+
+      res.json(milestone);
+    } catch (error) {
+      console.error("Error fetching milestone:", error);
+      res.status(500).send("Failed to fetch milestone");
     }
   });
 
