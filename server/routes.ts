@@ -264,11 +264,15 @@ export function registerRoutes(app: Express): Server {
       clientType,
       priority,
       estimatedHours,
-      budget
+      budget,
+      clientId // Added for admin project creation
     } = req.body;
     const user = req.user as any;
 
     try {
+      let projectClientId = clientId;
+
+      // If it's a client creating the project
       if (user.role === "client") {
         const [clientRecord] = await db.select()
           .from(clients)
@@ -278,115 +282,150 @@ export function registerRoutes(app: Express): Server {
         if (!clientRecord) {
           return res.status(404).send("Client record not found");
         }
-
-        const [newProject] = await db.insert(projects)
-          .values({
-            name,
-            description,
-            clientId: clientRecord.id,
-            lastDate: new Date(lastDate),
-            businessType,
-            clientType,
-            priority,
-            estimatedHours,
-            budget,
-            status: 'active'
-          })
-          .returning();
-
-        // Create initial milestone if provided
-        if (initialMilestone) {
-          const [milestone] = await db.insert(milestones)
-            .values({
-              projectId: newProject.id,
-              title: initialMilestone.title,
-              description: initialMilestone.description,
-              dueDate: new Date(initialMilestone.dueDate),
-              priority: initialMilestone.priority,
-              status: "pending",
-              progress: 0
-            })
-            .returning();
-
-          await db.insert(milestoneUpdates)
-            .values({
-              milestoneId: milestone.id,
-              updatedBy: user.id,
-              previousStatus: null,
-              newStatus: "pending",
-              comment: "Initial milestone created"
-            });
-
-          wsService.broadcastToProjectMembers(newProject.id, {
-            type: 'milestone_created',
-            payload: {
-              milestone,
-              project: {
-                id: newProject.id,
-                name: newProject.name
-              }
-            }
-          });
-        }
-
-        res.json(newProject);
-      } else {
-        const { clientId } = req.body;
-        const [newProject] = await db.insert(projects)
-          .values({
-            name,
-            description,
-            clientId,
-            lastDate: new Date(lastDate),
-            businessType,
-            clientType,
-            priority,
-            estimatedHours,
-            budget,
-            status: 'active'
-          })
-          .returning();
-
-        // Create initial milestone if provided
-        if (initialMilestone) {
-          const [milestone] = await db.insert(milestones)
-            .values({
-              projectId: newProject.id,
-              title: initialMilestone.title,
-              description: initialMilestone.description,
-              dueDate: new Date(initialMilestone.dueDate),
-              priority: initialMilestone.priority,
-              status: "pending",
-              progress: 0
-            })
-            .returning();
-
-          await db.insert(milestoneUpdates)
-            .values({
-              milestoneId: milestone.id,
-              updatedBy: user.id,
-              previousStatus: null,
-              newStatus: "pending",
-              comment: "Initial milestone created"
-            });
-
-          wsService.broadcastToProjectMembers(newProject.id, {
-            type: 'milestone_created',
-            payload: {
-              milestone,
-              project: {
-                id: newProject.id,
-                name: newProject.name
-              }
-            }
-          });
-        }
-
-        res.json(newProject);
+        projectClientId = clientRecord.id;
+      } else if (!projectClientId) {
+        // Admin must provide a clientId
+        return res.status(400).send("Client ID is required for admin project creation");
       }
+
+      const [newProject] = await db.insert(projects)
+        .values({
+          name,
+          description,
+          clientId: projectClientId,
+          lastDate: new Date(lastDate),
+          businessType,
+          clientType,
+          priority,
+          estimatedHours,
+          budget,
+          status: 'active',
+          assignedTo: user.role === 'admin' ? user.id : null // Assign admin as project owner if admin creates it
+        })
+        .returning();
+
+      // Create initial milestone if provided
+      if (initialMilestone) {
+        const [milestone] = await db.insert(milestones)
+          .values({
+            projectId: newProject.id,
+            title: initialMilestone.title,
+            description: initialMilestone.description,
+            dueDate: new Date(initialMilestone.dueDate),
+            priority: initialMilestone.priority,
+            status: "pending",
+            progress: 0
+          })
+          .returning();
+
+        await db.insert(milestoneUpdates)
+          .values({
+            milestoneId: milestone.id,
+            updatedBy: user.id,
+            previousStatus: null,
+            newStatus: "pending",
+            comment: "Initial milestone created"
+          });
+
+        // Only broadcast if WebSocket service is available
+        if (wsService && wsService.broadcastToProjectMembers) {
+          wsService.broadcastToProjectMembers(newProject.id, {
+            type: 'milestone_created',
+            payload: {
+              milestone,
+              project: {
+                id: newProject.id,
+                name: newProject.name
+              }
+            }
+          });
+        }
+      }
+
+      // Update client's project count
+      await db.update(clients)
+        .set({
+          projects: sql`projects + 1`
+        })
+        .where(eq(clients.id, projectClientId));
+
+      res.json(newProject);
     } catch (error: any) {
       console.error("Project creation error:", error);
       res.status(500).send("Failed to create project");
+    }
+  });
+
+  app.patch("/api/admin/projects/:id/assign", requirePermission('projects', 'update'), async (req, res) => {
+    const { id } = req.params;
+    const { assignedTo } = req.body;
+    const user = req.user as any;
+
+    if (user.role !== 'admin') {
+      return res.status(403).send("Only admins can reassign projects");
+    }
+
+    try {
+      const [updatedProject] = await db.update(projects)
+        .set({ assignedTo })
+        .where(eq(projects.id, parseInt(id)))
+        .returning();
+
+      if (wsService && wsService.broadcastToProjectMembers) {
+        wsService.broadcastToProjectMembers(updatedProject.id, {
+          type: 'notification',
+          payload: {
+            type: 'project_assigned',
+            message: `Project has been reassigned`,
+            project: {
+              id: updatedProject.id,
+              name: updatedProject.name
+            }
+          }
+        });
+      }
+
+      res.json(updatedProject);
+    } catch (error) {
+      console.error("Project assignment error:", error);
+      res.status(500).send("Failed to assign project");
+    }
+  });
+
+  app.patch("/api/admin/projects/:id/status", requirePermission('projects', 'update'), async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+    const user = req.user as any;
+
+    if (user.role !== 'admin') {
+      return res.status(403).send("Only admins can update project status");
+    }
+
+    try {
+      const [updatedProject] = await db.update(projects)
+        .set({ status })
+        .where(eq(projects.id, parseInt(id)))
+        .returning();
+
+      if (wsService && wsService.broadcastToProjectMembers) {
+        wsService.broadcastToProjectMembers(updatedProject.id, {
+          type: 'notification',
+          payload: {
+            type: 'project_status_updated',
+            message: `Project status has been updated to ${status}`,
+            project: {
+              id: updatedProject.id,
+              name: updatedProject.name,
+              status
+            }
+          }
+        });
+      }
+
+      res.json(updatedProject);
+    } catch (error) {
+      console.error("Project status update error:", error);
+      res.status(500).send("Failed to update project status");
     }
   });
 
