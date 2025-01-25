@@ -28,6 +28,16 @@ export default function AuthPage() {
 
   async function onSubmit(data: NewUser) {
     try {
+      // Admin users can only login, not register
+      if (showAdminLogin && !isLogin) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Admin accounts can only be created by existing administrators",
+        });
+        return;
+      }
+
       // Set role based on admin toggle
       data.role = showAdminLogin ? "admin" : "client";
       const result = await (isLogin ? login(data) : register(data));
@@ -61,19 +71,20 @@ export default function AuthPage() {
           <div className="mb-6">
             <Tabs 
               value={showAdminLogin ? "admin" : "client"} 
-              onValueChange={(value) => setShowAdminLogin(value === "admin")}
+              onValueChange={(value) => {
+                setShowAdminLogin(value === "admin");
+                setIsLogin(value === "admin" ? true : isLogin);
+              }}
             >
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="client" className="flex items-center gap-2">
                   <UserCircle2 className="w-4 h-4" />
                   Client Portal
                 </TabsTrigger>
-                {isLogin && (
-                  <TabsTrigger value="admin" className="flex items-center gap-2">
-                    <Users className="w-4 h-4" />
-                    Admin Portal
-                  </TabsTrigger>
-                )}
+                <TabsTrigger value="admin" className="flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  Admin Portal
+                </TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
@@ -87,7 +98,11 @@ export default function AuthPage() {
                   <FormItem>
                     <FormLabel>Email</FormLabel>
                     <FormControl>
-                      <Input type="email" placeholder="Enter your email" {...field} />
+                      <Input 
+                        type="email" 
+                        placeholder={showAdminLogin ? "admin@gmail.com" : "Enter your email"} 
+                        {...field} 
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -100,7 +115,11 @@ export default function AuthPage() {
                   <FormItem>
                     <FormLabel>Password</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="Enter your password" {...field} />
+                      <Input 
+                        type="password" 
+                        placeholder={showAdminLogin ? "admin@123" : "Enter your password"} 
+                        {...field} 
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

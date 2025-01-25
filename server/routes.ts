@@ -5,6 +5,7 @@ import { db } from "@db";
 import { clients, documents, projects, users } from "@db/schema";
 import multer from "multer";
 import { eq, and, sql } from "drizzle-orm";
+import crypto from 'crypto'; // Import crypto library
 
 const upload = multer({
   dest: 'uploads/',
@@ -354,6 +355,63 @@ export function registerRoutes(app: Express): Server {
     } catch (error) {
       console.error("Error fetching admin stats:", error);
       res.status(500).send("Failed to fetch admin statistics");
+    }
+  });
+
+
+  //NEW ROUTE FROM EDITED SNIPPET
+  app.post("/api/register", async (req, res, next) => {
+    try {
+      const result = insertUserSchema.safeParse(req.body);
+      if (!result.success) {
+        return res
+          .status(400)
+          .send("Invalid input: " + result.error.issues.map(i => i.message).join(", "));
+      }
+
+      const { username, password, role } = result.data;
+
+      // Prevent admin registration through public endpoint
+      if (role === 'admin') {
+        return res.status(403).send("Admin accounts can only be created by existing administrators");
+      }
+
+      // Check if user already exists
+      const [existingUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
+
+      if (existingUser) {
+        return res.status(400).send("Username already exists");
+      }
+
+      // Hash the password before storing
+      const hashedPassword = await crypto.hash(password);
+
+      // Create the new user
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          ...result.data,
+          password: hashedPassword,
+          role: 'client', // Force client role for public registration
+        })
+        .returning();
+
+      // Log the user in after registration
+      req.login(newUser, (err) => {
+        if (err) {
+          return next(err);
+        }
+        return res.json({
+          message: "Registration successful",
+          user: { id: newUser.id, username: newUser.username },
+        });
+      });
+    } catch (error) {
+      next(error);
     }
   });
 
