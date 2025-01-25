@@ -1,0 +1,59 @@
+import { Switch, Route } from "wouter";
+import { queryClient } from "./lib/queryClient";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/toaster";
+import { useUser } from "@/hooks/use-user";
+import { Loader2 } from "lucide-react";
+import NotFound from "@/pages/not-found";
+import AuthPage from "@/pages/auth-page";
+import AdminDashboard from "@/pages/admin/dashboard";
+import ClientDashboard from "@/pages/client/dashboard";
+import AdminClients from "@/pages/admin/clients";
+
+function Router() {
+  const { user, isLoading, isAdmin } = useUser();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-border" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthPage />;
+  }
+
+  return (
+    <Switch>
+      {isAdmin ? (
+        <>
+          <Route path="/admin" component={AdminDashboard} />
+          <Route path="/admin/clients" component={AdminClients} />
+        </>
+      ) : (
+        <Route path="/client" component={ClientDashboard} />
+      )}
+      <Route path="/">
+        {isAdmin ? (
+          <AdminDashboard />
+        ) : (
+          <ClientDashboard />
+        )}
+      </Route>
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Router />
+      <Toaster />
+    </QueryClientProvider>
+  );
+}
+
+export default App;
