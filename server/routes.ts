@@ -9,6 +9,8 @@ import { eq, and, sql } from "drizzle-orm";
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
+import { format, subDays, parseISO } from 'date-fns';
+
 
 const upload = multer({
   dest: 'uploads/',
@@ -570,6 +572,164 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+
+  // Add report generation endpoints
+  app.get("/api/admin/reports", async (req, res) => {
+    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
+      return res.status(403).send("Unauthorized");
+    }
+
+    const { type, startDate, endDate } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).send("Start and end dates are required");
+    }
+
+    try {
+      const start = parseISO(startDate as string);
+      const end = parseISO(endDate as string);
+
+      switch (type) {
+        case 'documents': {
+          const [documentStats] = await db
+            .select({
+              totalDocuments: sql<number>`count(*)`,
+              totalSize: sql<number>`sum(size)`,
+            })
+            .from(documents)
+            .where(sql`created_at between ${start} and ${end}`);
+
+          const documentTypes = await db
+            .select({
+              type: documents.type,
+              count: sql<number>`count(*)`,
+            })
+            .from(documents)
+            .where(sql`created_at between ${start} and ${end}`)
+            .groupBy(documents.type);
+
+          res.json({
+            totalDocuments: documentStats.totalDocuments,
+            totalSize: documentStats.totalSize,
+            documentTypes: documentTypes.map(dt => ({
+              name: dt.type,
+              count: dt.count,
+            })),
+          });
+          break;
+        }
+
+        case 'users': {
+          const [userStats] = await db
+            .select({
+              activeUsers: sql<number>`count(distinct id)`,
+              newUsers: sql<number>`count(case when created_at between ${start} and ${end} then 1 end)`,
+            })
+            .from(users)
+            .where(sql`last_login >= ${subDays(new Date(), 30)}`);
+
+          const loginActivity = await db
+            .select({
+              date: sql<string>`date_trunc('day', last_login)`,
+              count: sql<number>`count(*)`,
+            })
+            .from(users)
+            .where(sql`last_login between ${start} and ${end}`)
+            .groupBy(sql`date_trunc('day', last_login)`)
+            .orderBy(sql`date_trunc('day', last_login)`);
+
+          res.json({
+            activeUsers: userStats.activeUsers,
+            newUsers: userStats.newUsers,
+            loginActivity: loginActivity.map(la => ({
+              date: format(new Date(la.date), 'MMM d, yyyy'),
+              count: la.count,
+            })),
+          });
+          break;
+        }
+
+        default:
+          res.status(400).send("Invalid report type");
+      }
+    } catch (error) {
+      console.error("Error generating report:", error);
+      res.status(500).send("Failed to generate report");
+    }
+  });
+
+  app.post("/api/admin/reports/:type/download", async (req, res) => {
+    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
+      return res.status(403).send("Unauthorized");
+    }
+
+    const { type } = req.params;
+    const { startDate, endDate } = req.body;
+
+    if (!startDate || !endDate) {
+      return res.status(400).send("Start and end dates are required");
+    }
+
+    try {
+      const start = parseISO(startDate);
+      const end = parseISO(endDate);
+
+      let data: any[] = [];
+      let headers: string[] = [];
+
+      switch (type) {
+        case 'documents': {
+          data = await db
+            .select({
+              id: documents.id,
+              name: documents.name,
+              type: documents.type,
+              size: documents.size,
+              createdAt: documents.createdAt,
+              uploadedBy: users.username,
+            })
+            .from(documents)
+            .leftJoin(users, eq(documents.uploadedBy, users.id))
+            .where(sql`documents.created_at between ${start} and ${end}`);
+
+          headers = ['ID', 'Name', 'Type', 'Size', 'Created At', 'Uploaded By'];
+          break;
+        }
+
+        case 'users': {
+          data = await db
+            .select({
+              id: users.id,
+              username: users.username,
+              role: users.role,
+              createdAt: users.createdAt,
+              lastLogin: users.lastLogin,
+            })
+            .from(users)
+            .where(sql`created_at between ${start} and ${end}`);
+
+          headers = ['ID', 'Username', 'Role', 'Created At', 'Last Login'];
+          break;
+        }
+
+        default:
+          return res.status(400).send("Invalid report type");
+      }
+
+      // Generate CSV
+      const csv = [
+        headers.join(','),
+        ...data.map(row => Object.values(row).join(',')),
+      ].join('\n');
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename=${type}-report.csv`);
+      res.send(csv);
+    } catch (error) {
+      console.error("Error generating report download:", error);
+      res.status(500).send("Failed to generate report download");
+    }
+  });
 
   // Add document download route
   app.get("/api/documents/:id/download", async (req, res) => {
