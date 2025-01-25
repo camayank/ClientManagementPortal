@@ -6,17 +6,27 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useUser } from "@/hooks/use-user";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
 import type { NewUser } from "@db/schema";
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
   const { login, register } = useUser();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
 
   const form = useForm<NewUser>({
     defaultValues: {
       username: "",
       password: "",
+      role: "client",
     },
   });
 
@@ -29,6 +39,10 @@ export default function AuthPage() {
           title: "Error",
           description: result.message,
         });
+      } else {
+        // Redirect based on role
+        const role = result.user?.role || "client";
+        setLocation(role === "admin" ? "/admin" : "/client");
       }
     } catch (error: any) {
       toast({
@@ -74,6 +88,29 @@ export default function AuthPage() {
                   </FormItem>
                 )}
               />
+              {!isLogin && (
+                <FormField
+                  control={form.control}
+                  name="role"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Role</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a role" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="client">Client</SelectItem>
+                          <SelectItem value="admin">Admin</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               <Button type="submit" className="w-full">
                 {isLogin ? "Login" : "Register"}
               </Button>

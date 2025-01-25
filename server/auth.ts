@@ -99,6 +99,11 @@ export function setupAuth(app: Express) {
         return res.status(400).send("Username and password are required");
       }
 
+      // Validate role
+      if (role !== "admin" && role !== "client") {
+        return res.status(400).send("Invalid role specified");
+      }
+
       const [existingUser] = await db
         .select()
         .from(users)
