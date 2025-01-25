@@ -77,6 +77,8 @@ export function setupAuth(app: Express) {
           return done(null, false, { message: "Incorrect username." });
         }
 
+        console.log("Found user:", { ...user, password: '[REDACTED]' });
+
         const isValidPassword = await comparePassword(password, user.password);
         console.log("Password validation result:", isValidPassword);
 
@@ -92,6 +94,8 @@ export function setupAuth(app: Express) {
           .from(userRoles)
           .innerJoin(roles, eq(userRoles.roleId, roles.id))
           .where(eq(userRoles.userId, user.id));
+
+        console.log("User roles:", userRolesData);
 
         const userWithRoles = {
           ...user,
@@ -145,12 +149,15 @@ export function setupAuth(app: Express) {
 
       done(null, userWithRoles);
     } catch (err) {
+      console.error("Deserialize error:", err);
       done(err);
     }
   });
 
   app.post("/api/login", (req, res, next) => {
     console.log("Login attempt:", req.body.username);
+    console.log("Request body:", { ...req.body, password: '[REDACTED]' });
+
     passport.authenticate("local", (err: any, user: Express.User | false, info: any) => {
       if (err) {
         console.error("Authentication error:", err);
@@ -172,7 +179,7 @@ export function setupAuth(app: Express) {
           id: user.id,
           username: user.username,
           role: user.role,
-          roles: (user as any).roles,
+          roles: user.roles,
         });
       });
     })(req, res, next);
@@ -194,7 +201,7 @@ export function setupAuth(app: Express) {
         id: user.id,
         username: user.username,
         role: user.role,
-        roles: (user as any).roles,
+        roles: user.roles,
       });
     }
     res.status(401).send("Not logged in");
