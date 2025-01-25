@@ -2,6 +2,9 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { Server } from 'http';
 import type { IncomingMessage } from 'http';
 import type { User } from '@db/schema';
+import { db } from "@db";
+import { projects, users } from "@db/schema";
+import { eq } from "drizzle-orm";
 
 interface ExtWebSocket extends WebSocket {
   userId?: number;
@@ -9,7 +12,7 @@ interface ExtWebSocket extends WebSocket {
 }
 
 interface WSMessage {
-  type: 'chat' | 'notification' | 'activity';
+  type: 'chat' | 'notification' | 'activity' | 'milestone_created' | 'milestone_updated';
   payload: any;
 }
 
@@ -146,6 +149,46 @@ export class WebSocketService {
         // You'll need to check if the user is an admin here
         client.send(JSON.stringify(message));
       }
+    }
+  }
+
+  // Broadcast message to all members of a project (admin and assigned client)
+  public async broadcastToProjectMembers(projectId: number, message: WSMessage) {
+    try {
+      const [project] = await db.select({
+        clientId: projects.clientId,
+        assignedTo: projects.assignedTo
+      })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1);
+
+      if (!project) {
+        console.error(`Project ${projectId} not found`);
+        return;
+      }
+
+      // Get client user ID
+      if (project.clientId) {
+        const [clientUser] = await db.select()
+          .from(users)
+          .where(eq(users.id, project.clientId))
+          .limit(1);
+
+        if (clientUser) {
+          this.sendToUser(clientUser.id, message);
+        }
+      }
+
+      // Send to assigned admin/staff
+      if (project.assignedTo) {
+        this.sendToUser(project.assignedTo, message);
+      }
+
+      // Also broadcast to all admins
+      this.broadcastToAdmin(message);
+    } catch (error) {
+      console.error('Error broadcasting to project members:', error);
     }
   }
 }
