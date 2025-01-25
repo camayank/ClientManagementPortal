@@ -1,12 +1,8 @@
 import { ClientLayout } from "@/components/layouts/ClientLayout";
 import { DocumentUpload } from "@/components/documents/DocumentUpload";
 import { DocumentList } from "@/components/documents/DocumentList";
-import { useWebSocket } from "@/hooks/use-websocket";
 
 export default function ClientDocuments() {
-  // Initialize WebSocket connection
-  useWebSocket();
-
   return (
     <ClientLayout>
       <div className="space-y-6">
@@ -18,7 +14,6 @@ export default function ClientDocuments() {
         </div>
 
         <DocumentUpload />
-
         <DocumentList />
       </div>
     </ClientLayout>
