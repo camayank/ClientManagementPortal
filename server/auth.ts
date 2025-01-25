@@ -3,11 +3,13 @@ import { Strategy as LocalStrategy } from "passport-local";
 import { type Express } from "express";
 import session from "express-session";
 import createMemoryStore from "memorystore";
-import { users, roles, userRoles } from "@db/schema";
+import { users, roles, userRoles, type User } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
-import { hash as bcryptHash, compare as bcryptCompare } from "bcrypt";
+import bcrypt from "bcrypt";
 import { z } from "zod";
+
+const SALT_ROUNDS = 10;
 
 // Create schema for user input validation
 const userInputSchema = z.object({
@@ -18,20 +20,23 @@ const userInputSchema = z.object({
 
 declare global {
   namespace Express {
-    interface User {
-      id: number;
-      username: string;
-      role: string;
-      permissions?: string[];
+    interface User extends Omit<User, 'password'> {
       roles?: string[];
     }
   }
 }
 
-const SALT_ROUNDS = 10;
-
 export async function hashPassword(password: string): Promise<string> {
-  return bcryptHash(password, SALT_ROUNDS);
+  return bcrypt.hash(password, SALT_ROUNDS);
+}
+
+export async function comparePassword(password: string, hash: string): Promise<boolean> {
+  try {
+    return await bcrypt.compare(password, hash);
+  } catch (error) {
+    console.error('Error comparing passwords:', error);
+    return false;
+  }
 }
 
 export function setupAuth(app: Express) {
@@ -60,6 +65,7 @@ export function setupAuth(app: Express) {
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
+        console.log("Attempting login for username:", username);
         const [user] = await db
           .select()
           .from(users)
@@ -67,15 +73,18 @@ export function setupAuth(app: Express) {
           .limit(1);
 
         if (!user) {
+          console.log("User not found");
           return done(null, false, { message: "Incorrect username." });
         }
 
-        const isValidPassword = await bcryptCompare(password, user.password);
+        const isValidPassword = await comparePassword(password, user.password);
+        console.log("Password validation result:", isValidPassword);
+
         if (!isValidPassword) {
           return done(null, false, { message: "Incorrect password." });
         }
 
-        // Get user roles and permissions
+        // Get user roles
         const userRolesData = await db
           .select({
             roleName: roles.name,
@@ -86,6 +95,7 @@ export function setupAuth(app: Express) {
 
         const userWithRoles = {
           ...user,
+          password: undefined,
           roles: userRolesData.map(r => r.roleName),
         };
 
@@ -96,13 +106,14 @@ export function setupAuth(app: Express) {
 
         return done(null, userWithRoles);
       } catch (err) {
+        console.error("Login error:", err);
         return done(err);
       }
     })
   );
 
   passport.serializeUser((user, done) => {
-    done(null, user.id);
+    done(null, (user as Express.User).id);
   });
 
   passport.deserializeUser(async (id: number, done) => {
@@ -117,7 +128,7 @@ export function setupAuth(app: Express) {
         return done(null, false);
       }
 
-      // Get user roles and permissions
+      // Get user roles
       const userRolesData = await db
         .select({
           roleName: roles.name,
@@ -128,6 +139,7 @@ export function setupAuth(app: Express) {
 
       const userWithRoles = {
         ...user,
+        password: undefined,
         roles: userRolesData.map(r => r.roleName),
       };
 
@@ -137,89 +149,22 @@ export function setupAuth(app: Express) {
     }
   });
 
-  app.post("/api/register", async (req, res, next) => {
-    try {
-      const validatedInput = userInputSchema.safeParse(req.body);
-      if (!validatedInput.success) {
-        return res
-          .status(400)
-          .send("Invalid input: " + validatedInput.error.issues.map(i => i.message).join(", "));
-      }
-
-      const { username, password, role } = validatedInput.data;
-
-      // Prevent admin registration through public endpoint
-      if (role === 'admin') {
-        return res.status(403).send("Admin accounts can only be created by existing administrators");
-      }
-
-      // Check if user already exists
-      const [existingUser] = await db
-        .select()
-        .from(users)
-        .where(eq(users.username, username))
-        .limit(1);
-
-      if (existingUser) {
-        return res.status(400).send("Username already exists");
-      }
-
-      // Hash the password
-      const hashedPassword = await bcryptHash(password, SALT_ROUNDS);
-
-      // Create the new user
-      const [newUser] = await db
-        .insert(users)
-        .values({
-          username,
-          password: hashedPassword,
-          role: 'client', // Force client role for public registration
-        })
-        .returning();
-
-      // Create client record for the new user
-      if (role === 'client') {
-        await db.insert(userRoles)
-          .values({
-            userId: newUser.id,
-            roleId: 2, // Client role ID
-          });
-      }
-
-      // Log the user in after registration
-      req.login(newUser, (err) => {
-        if (err) {
-          return next(err);
-        }
-        return res.json({
-          message: "Registration successful",
-          user: { id: newUser.id, username: newUser.username },
-        });
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
   app.post("/api/login", (req, res, next) => {
-    const validatedInput = userInputSchema.safeParse(req.body);
-    if (!validatedInput.success) {
-      return res
-        .status(400)
-        .send("Invalid input: " + validatedInput.error.issues.map(i => i.message).join(", "));
-    }
-
+    console.log("Login attempt:", req.body.username);
     passport.authenticate("local", (err: any, user: Express.User | false, info: any) => {
       if (err) {
+        console.error("Authentication error:", err);
         return next(err);
       }
 
       if (!user) {
+        console.log("Authentication failed:", info.message);
         return res.status(400).send(info.message ?? "Login failed");
       }
 
       req.logIn(user, (err) => {
         if (err) {
+          console.error("Login error:", err);
           return next(err);
         }
 
