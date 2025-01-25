@@ -11,6 +11,7 @@ import ClientDashboard from "@/pages/client/dashboard";
 import AdminClients from "@/pages/admin/clients";
 import AdminDocuments from "@/pages/admin/documents";
 import ClientDocuments from "@/pages/client/documents";
+import PersonalInfo from "@/pages/client/personal-info";
 
 function ProtectedRoute({ 
   component: Component, 
@@ -54,6 +55,7 @@ function Router() {
       ) : (
         <>
           <Route path="/client" component={() => <ProtectedRoute component={ClientDashboard} isAdmin={false} />} />
+          <Route path="/client/personal-info" component={() => <ProtectedRoute component={PersonalInfo} isAdmin={false} />} />
           <Route path="/client/documents" component={() => <ProtectedRoute component={ClientDocuments} isAdmin={false} />} />
         </>
       )}
