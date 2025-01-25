@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -11,6 +11,22 @@ import ClientDashboard from "@/pages/client/dashboard";
 import AdminClients from "@/pages/admin/clients";
 import AdminDocuments from "@/pages/admin/documents";
 import ClientDocuments from "@/pages/client/documents";
+
+function ProtectedRoute({ 
+  component: Component, 
+  isAdmin: requireAdmin 
+}: { 
+  component: React.ComponentType, 
+  isAdmin: boolean 
+}) {
+  const { user, isAdmin } = useUser();
+
+  if (!user || (requireAdmin && !isAdmin) || (!requireAdmin && isAdmin)) {
+    return <Redirect to="/" />;
+  }
+
+  return <Component />;
+}
 
 function Router() {
   const { user, isLoading, isAdmin } = useUser();
@@ -31,22 +47,18 @@ function Router() {
     <Switch>
       {isAdmin ? (
         <>
-          <Route path="/admin" component={AdminDashboard} />
-          <Route path="/admin/clients" component={AdminClients} />
-          <Route path="/admin/documents" component={AdminDocuments} />
+          <Route path="/admin" component={() => <ProtectedRoute component={AdminDashboard} isAdmin={true} />} />
+          <Route path="/admin/clients" component={() => <ProtectedRoute component={AdminClients} isAdmin={true} />} />
+          <Route path="/admin/documents" component={() => <ProtectedRoute component={AdminDocuments} isAdmin={true} />} />
         </>
       ) : (
         <>
-          <Route path="/client" component={ClientDashboard} />
-          <Route path="/client/documents" component={ClientDocuments} />
+          <Route path="/client" component={() => <ProtectedRoute component={ClientDashboard} isAdmin={false} />} />
+          <Route path="/client/documents" component={() => <ProtectedRoute component={ClientDocuments} isAdmin={false} />} />
         </>
       )}
       <Route path="/">
-        {isAdmin ? (
-          <AdminDashboard />
-        ) : (
-          <ClientDashboard />
-        )}
+        <Redirect to={isAdmin ? "/admin" : "/client"} />
       </Route>
       <Route component={NotFound} />
     </Switch>

@@ -3,6 +3,7 @@ import type { User, NewUser } from "@db/schema";
 
 type RequestResult = {
   ok: true;
+  user: User;
 } | {
   ok: false;
   message: string;
@@ -30,7 +31,8 @@ async function handleRequest(
       return { ok: false, message };
     }
 
-    return { ok: true };
+    const data = await response.json();
+    return { ok: true, user: data };
   } catch (e: any) {
     return { ok: false, message: e.toString() };
   }

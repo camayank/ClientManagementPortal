@@ -1,0 +1,47 @@
+Prompt:
+
+Build a web application with two user roles: Client Dashboard and Admin Dashboard, designed to manage CPA firm operations transparently. The platform should include the following features:
+
+1. User Authentication:
+Secure login/signup for clients and admins.
+Role-based access: Clients can access their dashboard, and admins can access the admin panel.
+2. Client Dashboard Features:
+Filing Status Tracker: Display the status of filings (e.g., Pending, In Review, Completed) with real-time updates.
+Document Upload/Download: Securely upload and download documents. Maintain an activity log for all file actions.
+Royalty and Payment Dashboard:
+Show monthly royalty reports and allow clients to download statements.
+Include a chart or graph to visualize royalties over time.
+Notifications: Alert clients about upcoming deadlines, missing documents, or payment reminders.
+Support Request: Allow clients to submit support tickets for assistance.
+3. Admin Dashboard Features:
+Task Management:
+Assign tasks to team members (e.g., document reviews, filing preparations).
+View progress and deadlines for each task.
+Filing Analytics:
+Generate reports on filings, deadlines met, and client satisfaction.
+Track workload distribution among team members.
+Payment and Royalty Management:
+Track client royalty payouts and display payment history.
+Automate royalty calculations based on predefined percentages.
+Document Oversight:
+Access all client-uploaded documents.
+Approve/reject submissions and send feedback to clients.
+Notification Management:
+Create and send notifications to specific clients or all clients.
+4. Technology Stack:
+Front-End:
+Use React.js with Material UI or Tailwind CSS for an intuitive and responsive design.
+Back-End:
+Use Node.js (Express.js) or Django for handling API requests and business logic.
+Database:
+Use PostgreSQL or MongoDB to store user data, filings, and payment information.
+Authentication:
+Use Firebase Auth or Passport.js for secure user authentication.
+File Storage:
+Use AWS S3 or Google Drive API for secure file storage and retrieval.
+Payments:
+Integrate Stripe or Razorpay for royalty disbursement and payment tracking.
+5. Additional Requirements:
+Implement responsive design for desktop and mobile users.
+Provide a detailed README for deployment and further development.
+Generate the initial code structure for this platform, including user authentication and placeholders for the above features.
