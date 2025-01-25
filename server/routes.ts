@@ -133,7 +133,7 @@ export function registerRoutes(app: Express): Server {
       const [newUser] = await db.insert(users)
         .values({
           username,
-          password, 
+          password,
           role,
           fullName,
           email,
@@ -143,7 +143,7 @@ export function registerRoutes(app: Express): Server {
         await db.insert(clients)
           .values({
             userId: newUser.id,
-            company: fullName, 
+            company: fullName,
             status: 'active',
           });
       }
@@ -159,7 +159,7 @@ export function registerRoutes(app: Express): Server {
     const { newPassword } = req.body;
     try {
       const [updatedUser] = await db.update(users)
-        .set({ password: newPassword }) 
+        .set({ password: newPassword })
         .where(eq(users.id, parseInt(id)))
         .returning();
       res.json(updatedUser);
@@ -194,7 +194,7 @@ export function registerRoutes(app: Express): Server {
       const [user] = await db.insert(users)
         .values({
           username: email,
-          password, 
+          password,
           role: 'client',
         })
         .returning();
@@ -255,34 +255,113 @@ export function registerRoutes(app: Express): Server {
   });
 
   app.post("/api/projects", requirePermission('projects', 'create'), async (req, res) => {
-    const { name, lastDate } = req.body;
+    const { name, description, lastDate, initialMilestone } = req.body;
     const user = req.user as any;
+
     try {
       if (user.role === "client") {
         const [clientRecord] = await db.select()
           .from(clients)
           .where(eq(clients.userId, user.id))
           .limit(1);
+
         if (!clientRecord) {
           return res.status(404).send("Client record not found");
         }
+
         const [newProject] = await db.insert(projects)
           .values({
             name,
+            description,
             clientId: clientRecord.id,
             lastDate: new Date(lastDate),
+            status: 'active'
           })
           .returning();
+
+        // Create initial milestone if provided
+        if (initialMilestone) {
+          const [milestone] = await db.insert(milestones)
+            .values({
+              projectId: newProject.id,
+              title: initialMilestone.title,
+              description: initialMilestone.description,
+              dueDate: new Date(initialMilestone.dueDate),
+              priority: initialMilestone.priority,
+              status: "pending",
+              progress: 0
+            })
+            .returning();
+
+          await db.insert(milestoneUpdates)
+            .values({
+              milestoneId: milestone.id,
+              updatedBy: user.id,
+              previousStatus: null,
+              newStatus: "pending",
+              comment: "Initial milestone created"
+            });
+
+          wsService.broadcastToProjectMembers(newProject.id, {
+            type: 'milestone_created',
+            payload: {
+              milestone,
+              project: {
+                id: newProject.id,
+                name: newProject.name
+              }
+            }
+          });
+        }
+
         res.json(newProject);
       } else {
         const { clientId } = req.body;
         const [newProject] = await db.insert(projects)
           .values({
             name,
+            description,
             clientId,
             lastDate: new Date(lastDate),
+            status: 'active'
           })
           .returning();
+
+        // Create initial milestone if provided
+        if (initialMilestone) {
+          const [milestone] = await db.insert(milestones)
+            .values({
+              projectId: newProject.id,
+              title: initialMilestone.title,
+              description: initialMilestone.description,
+              dueDate: new Date(initialMilestone.dueDate),
+              priority: initialMilestone.priority,
+              status: "pending",
+              progress: 0
+            })
+            .returning();
+
+          await db.insert(milestoneUpdates)
+            .values({
+              milestoneId: milestone.id,
+              updatedBy: user.id,
+              previousStatus: null,
+              newStatus: "pending",
+              comment: "Initial milestone created"
+            });
+
+          wsService.broadcastToProjectMembers(newProject.id, {
+            type: 'milestone_created',
+            payload: {
+              milestone,
+              project: {
+                id: newProject.id,
+                name: newProject.name
+              }
+            }
+          });
+        }
+
         res.json(newProject);
       }
     } catch (error: any) {
@@ -417,7 +496,7 @@ export function registerRoutes(app: Express): Server {
         newClients: newClientsThisMonth.count,
         completedProjects: completedProjectsThisMonth.count,
         activeUsers: activeUsers.count,
-        pendingReviews: 0, 
+        pendingReviews: 0,
         clientsWithPending: 0,
         pendingActions: 0,
       };
@@ -670,15 +749,15 @@ export function registerRoutes(app: Express): Server {
         .insert(users)
         .values({
           username,
-          password, 
-          role: 'client', 
+          password,
+          role: 'client',
         })
         .returning();
       if (role === 'client') {
         await db.insert(clients)
           .values({
             userId: newUser.id,
-            company: username, 
+            company: username,
             status: 'active',
           });
       }
@@ -714,7 +793,7 @@ export function registerRoutes(app: Express): Server {
         .insert(users)
         .values({
           username,
-          password, 
+          password,
           role: 'admin',
         })
         .returning();
@@ -873,7 +952,7 @@ export function registerRoutes(app: Express): Server {
         description: milestones.description,
         status: milestones.status,
         dueDate: milestones.dueDate,
-completedAt: milestones.completedAt,
+        completedAt: milestones.completedAt,
         progress: milestones.progress,
         priority: milestones.priority,
         createdAt: milestones.createdAt,
