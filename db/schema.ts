@@ -9,6 +9,7 @@ export const users = pgTable("users", {
   role: text("role", { enum: ["admin", "client"] }).default("client").notNull(),
   fullName: text("full_name"),
   email: text("email"),
+  lastLogin: timestamp("last_login"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -18,6 +19,7 @@ export const clients = pgTable("clients", {
   company: text("company"),
   status: text("status", { enum: ["active", "inactive"] }).default("active"),
   projects: integer("projects").default(0),
+  lastActivity: timestamp("last_activity"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -81,16 +83,21 @@ export const documentsRelations = relations(documents, ({ one }) => ({
   }),
 }));
 
+// Schema validation
 export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
-export const insertDocumentSchema = createInsertSchema(documents);
-export const selectDocumentSchema = createSelectSchema(documents);
+export const insertClientSchema = createInsertSchema(clients);
+export const selectClientSchema = createSelectSchema(clients);
 export const insertProjectSchema = createInsertSchema(projects);
 export const selectProjectSchema = createSelectSchema(projects);
+export const insertDocumentSchema = createInsertSchema(documents);
+export const selectDocumentSchema = createSelectSchema(documents);
 
+// Types
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Client = typeof clients.$inferSelect;
+export type NewClient = typeof clients.$inferInsert;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type Document = typeof documents.$inferSelect;

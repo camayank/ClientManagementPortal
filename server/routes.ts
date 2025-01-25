@@ -4,7 +4,7 @@ import { setupAuth } from "./auth";
 import { db } from "@db";
 import { clients, documents, projects, users } from "@db/schema";
 import multer from "multer";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 
 const upload = multer({
   dest: 'uploads/',
@@ -16,14 +16,128 @@ const upload = multer({
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
 
+  // Admin statistics
+  app.get("/api/admin/stats", async (req, res) => {
+    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
+      return res.status(403).send("Unauthorized");
+    }
+
+    try {
+      const [totalClients] = await db.select({ count: sql<number>`count(*)` }).from(clients);
+      const [activeProjects] = await db.select({ count: sql<number>`count(*)` })
+        .from(projects)
+        .where(eq(projects.status, 'active'));
+
+      const [newClientsThisMonth] = await db.select({ count: sql<number>`count(*)` })
+        .from(clients)
+        .where(sql`created_at >= date_trunc('month', current_date)`);
+
+      const [completedProjectsThisMonth] = await db.select({ count: sql<number>`count(*)` })
+        .from(projects)
+        .where(and(
+          eq(projects.status, 'completed'),
+          sql`created_at >= date_trunc('month', current_date)`
+        ));
+
+      const [activeUsers] = await db.select({ count: sql<number>`count(*)` })
+        .from(users)
+        .where(sql`last_login >= now() - interval '24 hours'`);
+
+      const stats = {
+        totalClients: totalClients.count,
+        activeProjects: activeProjects.count,
+        newClients: newClientsThisMonth.count,
+        completedProjects: completedProjectsThisMonth.count,
+        activeUsers: activeUsers.count,
+        pendingReviews: 0, // To be implemented with review system
+        clientsWithPending: 0,
+        pendingActions: 0,
+      };
+
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching admin stats:", error);
+      res.status(500).send("Failed to fetch admin statistics");
+    }
+  });
+
   // Client management routes
   app.get("/api/clients", async (req, res) => {
     if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
       return res.status(403).send("Unauthorized");
     }
 
-    const clientList = await db.select().from(clients);
-    res.json(clientList);
+    try {
+      const clientList = await db.select({
+        id: clients.id,
+        company: clients.company,
+        status: clients.status,
+        projects: clients.projects,
+        createdAt: clients.createdAt,
+        user: users,
+      })
+      .from(clients)
+      .leftJoin(users, eq(clients.userId, users.id));
+
+      res.json(clientList);
+    } catch (error) {
+      console.error("Error fetching clients:", error);
+      res.status(500).send("Failed to fetch clients");
+    }
+  });
+
+  app.post("/api/clients", async (req, res) => {
+    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
+      return res.status(403).send("Unauthorized");
+    }
+
+    const { company, email, password } = req.body;
+
+    try {
+      // Create user account for client
+      const [user] = await db.insert(users)
+        .values({
+          username: email,
+          password, // Note: This should be hashed in production
+          role: 'client',
+        })
+        .returning();
+
+      // Create client profile
+      const [client] = await db.insert(clients)
+        .values({
+          userId: user.id,
+          company,
+          status: 'active',
+        })
+        .returning();
+
+      res.json(client);
+    } catch (error) {
+      console.error("Error creating client:", error);
+      res.status(500).send("Failed to create client");
+    }
+  });
+
+  app.patch("/api/clients/:id", async (req, res) => {
+    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
+      return res.status(403).send("Unauthorized");
+    }
+
+    const { id } = req.params;
+    const { status } = req.body;
+
+    try {
+      const [updatedClient] = await db.update(clients)
+        .set({ status })
+        .where(eq(clients.id, parseInt(id)))
+        .returning();
+
+      res.json(updatedClient);
+    } catch (error) {
+      console.error("Error updating client:", error);
+      res.status(500).send("Failed to update client");
+    }
   });
 
   // Project management routes
