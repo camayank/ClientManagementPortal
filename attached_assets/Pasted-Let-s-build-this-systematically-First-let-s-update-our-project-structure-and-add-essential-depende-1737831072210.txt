@@ -1,0 +1,200 @@
+Let's build this systematically. First, let's update our project structure and add essential dependencies:
+
+```bash
+npm install @prisma/client @tanstack/react-query @trpc/client @trpc/server zod react-dropzone next-auth bcrypt
+
+npm install -D prisma typescript @types/react @types/node @types/bcrypt
+```
+
+Project Structure:
+```
+src/
+├── app/
+│   ├── api/
+│   ├── auth/
+│   ├── dashboard/
+│   └── admin/
+├── components/
+├── lib/
+├── server/
+└── types/
+```
+
+Let's implement each part:
+
+1. Authentication System:
+
+```typescript
+// src/lib/auth.ts
+import { PrismaAdapter } from "@next-auth/prisma-adapter"
+import { prisma } from "./db"
+
+export const authOptions = {
+  adapter: PrismaAdapter(prisma),
+  providers: [
+    CredentialsProvider({
+      name: "credentials",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" }
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) return null
+        
+        const user = await prisma.user.findUnique({
+          where: { email: credentials.email }
+        })
+        
+        if (!user) return null
+        
+        const isValid = await bcrypt.compare(credentials.password, user.password)
+        if (!isValid) return null
+        
+        return user
+      }
+    })
+  ],
+  callbacks: {
+    async session({ session, user }) {
+      session.user.role = user.role
+      return session
+    }
+  }
+}
+```
+
+2. Client Portal Dashboard:
+
+```typescript
+// src/app/dashboard/page.tsx
+export default function DashboardPage() {
+  return (
+    <div className="container mx-auto py-6">
+      <Statistics />
+      <ProjectsList />
+      <DocumentsList />
+    </div>
+  )
+}
+```
+
+3. Project Management:
+
+```typescript
+// src/components/projects/project-list.tsx
+import { Card, List } from "@/components/ui"
+
+export function ProjectsList() {
+  const { data: projects } = useProjects()
+  
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Projects</CardTitle>
+        <Button onClick={() => setNewProjectOpen(true)}>New Project</Button>
+      </CardHeader>
+      <List>
+        {projects?.map(project => (
+          <ProjectListItem key={project.id} project={project} />
+        ))}
+      </List>
+    </Card>
+  )
+}
+```
+
+4. Document Management:
+
+```typescript
+// src/components/documents/document-uploader.tsx
+import { useDropzone } from "react-dropzone"
+
+export function DocumentUploader() {
+  const { getRootProps, getInputProps } = useDropzone({
+    onDrop: async (files) => {
+      const formData = new FormData()
+      files.forEach(file => formData.append("files", file))
+      await uploadDocuments(formData)
+    }
+  })
+  
+  return (
+    <div {...getRootProps()} className="border-2 border-dashed p-8">
+      <input {...getInputProps()} />
+      <p>Drag & drop files here</p>
+    </div>
+  )
+}
+```
+
+5. Admin Portal:
+
+```typescript
+// src/app/admin/page.tsx
+export default function AdminPage() {
+  return (
+    <div className="container mx-auto py-6">
+      <AdminStats />
+      <ClientManagement />
+      <ProjectOverview />
+    </div>
+  )
+}
+```
+
+6. API Routes:
+
+```typescript
+// src/app/api/projects/route.ts
+import { getServerSession } from "next-auth"
+import { prisma } from "@/lib/db"
+
+export async function GET() {
+  const session = await getServerSession()
+  if (!session) return new Response("Unauthorized", { status: 401 })
+  
+  const projects = await prisma.project.findMany({
+    where: { userId: session.user.id }
+  })
+  
+  return Response.json(projects)
+}
+```
+
+7. Database Schema:
+
+```prisma
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  password  String
+  name      String
+  role      UserRole  @default(CLIENT)
+  projects  Project[]
+  documents Document[]
+}
+
+model Project {
+  id          String    @id @default(cuid())
+  name        String
+  status      Status    @default(PENDING)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  documents   Document[]
+  createdAt   DateTime  @default(now())
+}
+
+model Document {
+  id        String   @id @default(cuid())
+  name      String
+  url       String
+  type      String
+  size      Int
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+}
+```
+
+Want me to provide implementation details for any specific part?
