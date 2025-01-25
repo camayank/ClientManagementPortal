@@ -12,6 +12,18 @@ import {
 } from "@/components/ui/select";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useState } from "react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  LineChart,
+  Line,
+  ResponsiveContainer,
+} from "recharts";
 
 export default function AdminReports() {
   const [reportType, setReportType] = useState<string>("documents");
@@ -184,6 +196,103 @@ export default function AdminReports() {
                         </div>
                       ))}
                     </dl>
+                  </CardContent>
+                </Card>
+              </>
+            )}
+            {reportType === "projects" && (
+              <>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Project Overview</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <dl className="grid grid-cols-3 gap-4">
+                      <div>
+                        <dt className="text-sm font-medium text-gray-500">Total Projects</dt>
+                        <dd className="text-2xl font-bold">{reportData.totalProjects}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-sm font-medium text-gray-500">Active Projects</dt>
+                        <dd className="text-2xl font-bold">{reportData.activeProjects}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-sm font-medium text-gray-500">Completed Projects</dt>
+                        <dd className="text-2xl font-bold">{reportData.completedProjects}</dd>
+                      </div>
+                    </dl>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Projects by Status</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={reportData.projectsByStatus}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis />
+                          <Tooltip />
+                          <Legend />
+                          <Bar dataKey="count" name="Projects" fill="hsl(var(--primary))" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              </>
+            )}
+
+            {reportType === "clients" && (
+              <>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Client Statistics</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <dl className="grid grid-cols-3 gap-4">
+                      <div>
+                        <dt className="text-sm font-medium text-gray-500">Total Clients</dt>
+                        <dd className="text-2xl font-bold">{reportData.totalClients}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-sm font-medium text-gray-500">Active Clients</dt>
+                        <dd className="text-2xl font-bold">{reportData.activeClients}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-sm font-medium text-gray-500">New Clients</dt>
+                        <dd className="text-2xl font-bold">{reportData.newClients}</dd>
+                      </div>
+                    </dl>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Client Activity Timeline</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={reportData.activityTimeline}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="date" />
+                          <YAxis />
+                          <Tooltip />
+                          <Legend />
+                          <Line
+                            type="monotone"
+                            dataKey="uploads"
+                            name="Document Uploads"
+                            stroke="hsl(var(--primary))"
+                            strokeWidth={2}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
                   </CardContent>
                 </Card>
               </>

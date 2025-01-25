@@ -648,6 +648,68 @@ export function registerRoutes(app: Express): Server {
           });
           break;
         }
+        case 'projects': {
+          const [projectStats] = await db
+            .select({
+              totalProjects: sql<number>`count(*)`,
+              activeProjects: sql<number>`count(case when status = 'active' then 1 end)`,
+              completedProjects: sql<number>`count(case when status = 'completed' then 1 end)`,
+            })
+            .from(projects)
+            .where(sql`created_at between ${start} and ${end}`);
+
+          const projectsByStatus = await db
+            .select({
+              status: projects.status,
+              count: sql<number>`count(*)`,
+            })
+            .from(projects)
+            .where(sql`created_at between ${start} and ${end}`)
+            .groupBy(projects.status);
+
+          res.json({
+            totalProjects: projectStats.totalProjects,
+            activeProjects: projectStats.activeProjects,
+            completedProjects: projectStats.completedProjects,
+            projectsByStatus: projectsByStatus.map(ps => ({
+              name: ps.status,
+              count: ps.count,
+            })),
+          });
+          break;
+        }
+
+        case 'clients': {
+          const [clientStats] = await db
+            .select({
+              totalClients: sql<number>`count(*)`,
+              activeClients: sql<number>`count(case when status = 'active' then 1 end)`,
+              newClients: sql<number>`count(case when created_at between ${start} and ${end} then 1 end)`,
+            })
+            .from(clients);
+
+          const clientActivity = await db
+            .select({
+              date: sql<string>`date_trunc('day', documents.created_at)`,
+              uploads: sql<number>`count(*)`,
+            })
+            .from(documents)
+            .innerJoin(clients, eq(documents.clientId, clients.id))
+            .where(sql`documents.created_at between ${start} and ${end}`)
+            .groupBy(sql`date_trunc('day', documents.created_at)`)
+            .orderBy(sql`date_trunc('day', documents.created_at)`);
+
+          res.json({
+            totalClients: clientStats.totalClients,
+            activeClients: clientStats.activeClients,
+            newClients: clientStats.newClients,
+            activityTimeline: clientActivity.map(ca => ({
+              date: format(new Date(ca.date), 'MMM d, yyyy'),
+              uploads: ca.uploads,
+            })),
+          });
+          break;
+        }
 
         default:
           res.status(400).send("Invalid report type");
@@ -711,7 +773,6 @@ export function registerRoutes(app: Express): Server {
           headers = ['ID', 'Username', 'Role', 'Created At', 'Last Login'];
           break;
         }
-
         default:
           return res.status(400).send("Invalid report type");
       }
