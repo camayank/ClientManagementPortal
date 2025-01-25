@@ -350,7 +350,18 @@ export function registerRoutes(app: Express): Server {
   app.get("/api/documents", requirePermission('documents', 'read'), async (req, res) => {
     try {
       const user = req.user as any;
-      let query = db.select().from(documents);
+      let query = db.select({
+        id: documents.id,
+        name: documents.name,
+        type: documents.type,
+        size: documents.size,
+        createdAt: documents.createdAt,
+        updatedAt: documents.updatedAt,
+        metadata: documents.metadata,
+        uploadedBy: documents.uploadedBy,
+        clientId: documents.clientId,
+        projectId: documents.projectId,
+      }).from(documents);
 
       if (user.role === 'client') {
         // Get client's ID first
