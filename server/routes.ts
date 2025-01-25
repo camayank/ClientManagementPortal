@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketService } from "./websocket/server";
 import { setupAuth } from "./auth";
 import { db } from "@db";
-import { clients, documents, projects, users, milestones, milestoneUpdates } from "@db/schema";
+import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates } from "@db/schema";
 import multer from "multer";
 import { eq, and, sql } from "drizzle-orm";
 import { requirePermission } from "./middleware/check-permission";
@@ -255,10 +255,10 @@ export function registerRoutes(app: Express): Server {
   });
 
   app.post("/api/projects", requirePermission('projects', 'create'), async (req, res) => {
-    const { 
-      name, 
-      description, 
-      lastDate, 
+    const {
+      name,
+      description,
+      lastDate,
       initialMilestone,
       businessType,
       clientType,
@@ -996,6 +996,146 @@ export function registerRoutes(app: Express): Server {
       res.status(500).send("Failed to fetch milestone");
     }
   });
+
+  // Get all project templates
+  app.get("/api/project-templates", requirePermission('projects', 'read'), async (req, res) => {
+    try {
+      const templates = await db.select().from(projectTemplates);
+      res.json(templates);
+    } catch (error) {
+      console.error("Error fetching project templates:", error);
+      res.status(500).send("Failed to fetch project templates");
+    }
+  });
+
+  // Create default templates if none exist
+  async function createDefaultTemplates() {
+    const existingTemplates = await db.select().from(projectTemplates);
+    if (existingTemplates.length === 0) {
+      await db.insert(projectTemplates).values([
+        {
+          name: "Individual Tax Return",
+          description: "Annual tax return preparation for individual clients",
+          businessType: "tax_return_preparation",
+          clientType: "individual",
+          priority: "medium",
+          estimatedHours: 8,
+          budget: 800,
+          defaultMilestones: [
+            {
+              title: "Document Collection",
+              description: "Gather all necessary tax documents",
+              dueDate: "relative:+7", // 7 days from project start
+              priority: "high"
+            },
+            {
+              title: "Initial Review",
+              description: "Review received documents and identify missing items",
+              dueDate: "relative:+14",
+              priority: "medium"
+            },
+            {
+              title: "Tax Return Preparation",
+              description: "Prepare tax return based on provided documents",
+              dueDate: "relative:+21",
+              priority: "high"
+            },
+            {
+              title: "Quality Review",
+              description: "Internal review of prepared tax return",
+              dueDate: "relative:+28",
+              priority: "high"
+            },
+            {
+              title: "Client Review",
+              description: "Review tax return with client",
+              dueDate: "relative:+35",
+              priority: "medium"
+            }
+          ]
+        },
+        {
+          name: "Small Business Bookkeeping",
+          description: "Monthly bookkeeping services for small businesses",
+          businessType: "bookkeeping",
+          clientType: "small_business",
+          priority: "medium",
+          estimatedHours: 10,
+          budget: 1000,
+          defaultMilestones: [
+            {
+              title: "Initial Setup",
+              description: "Set up accounting software and chart of accounts",
+              dueDate: "relative:+3",
+              priority: "high"
+            },
+            {
+              title: "Bank Reconciliation",
+              description: "Reconcile bank and credit card statements",
+              dueDate: "relative:+7",
+              priority: "high"
+            },
+            {
+              title: "Financial Statements",
+              description: "Prepare monthly financial statements",
+              dueDate: "relative:+14",
+              priority: "medium"
+            },
+            {
+              title: "Review Meeting",
+              description: "Review financial statements with client",
+              dueDate: "relative:+21",
+              priority: "medium"
+            }
+          ]
+        },
+        {
+          name: "Corporate Tax Preparation",
+          description: "Annual corporate tax return preparation",
+          businessType: "tax_return_preparation",
+          clientType: "corporation",
+          priority: "high",
+          estimatedHours: 40,
+          budget: 5000,
+          defaultMilestones: [
+            {
+              title: "Planning Meeting",
+              description: "Initial tax planning meeting",
+              dueDate: "relative:+7",
+              priority: "high"
+            },
+            {
+              title: "Document Collection",
+              description: "Gather all required corporate documents",
+              dueDate: "relative:+21",
+              priority: "high"
+            },
+            {
+              title: "Financial Statement Review",
+              description: "Review year-end financial statements",
+              dueDate: "relative:+35",
+              priority: "high"
+            },
+            {
+              title: "Tax Return Preparation",
+              description: "Prepare corporate tax return",
+              dueDate: "relative:+49",
+              priority: "high"
+            },
+            {
+              title: "Partner Review",
+              description: "Partner review of tax return",
+              dueDate: "relative:+56",
+              priority: "high"
+            }
+          ]
+        }
+      ]);
+    }
+  }
+
+  // Call this after database is ready
+  createDefaultTemplates().catch(console.error);
 
   return httpServer;
 }

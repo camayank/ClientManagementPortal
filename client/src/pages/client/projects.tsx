@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useForm } from "react-hook-form";
 import { useToast } from "@/hooks/use-toast";
-import type { Project } from "@db/schema";
+import type { Project, ProjectTemplate } from "@db/schema";
 import { Badge } from "@/components/ui/badge";
 import { ChevronRight } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { addDays, format } from 'date-fns';
 
 const projectSchema = z.object({
   name: z.string().min(1, "Project name is required"),
@@ -98,6 +99,10 @@ export default function ClientProjects() {
     queryKey: ['/api/projects'],
   });
 
+  const { data: templates } = useQuery<ProjectTemplate[]>({
+    queryKey: ['/api/project-templates'],
+  });
+
   const createProject = useMutation({
     mutationFn: async (data: NewProjectForm) => {
       const response = await fetch('/api/projects', {
@@ -131,6 +136,34 @@ export default function ClientProjects() {
     },
   });
 
+  const handleTemplateChange = (templateId: string) => {
+    const template = templates?.find(t => t.id === parseInt(templateId));
+    if (template) {
+      // Calculate relative dates for milestones
+      const firstMilestone = template.defaultMilestones[0];
+      const dueDate = firstMilestone.dueDate.startsWith('relative:') 
+        ? format(addDays(new Date(), parseInt(firstMilestone.dueDate.split('+')[1])), 'yyyy-MM-dd')
+        : format(new Date(firstMilestone.dueDate), 'yyyy-MM-dd');
+
+      form.reset({
+        name: template.name,
+        description: template.description || '',
+        businessType: template.businessType,
+        clientType: template.clientType,
+        priority: template.priority,
+        estimatedHours: template.estimatedHours?.toString() || '',
+        budget: template.budget?.toString() || '',
+        lastDate: format(addDays(new Date(), 60), 'yyyy-MM-dd'), // Default to 60 days
+        initialMilestone: {
+          title: firstMilestone.title,
+          description: firstMilestone.description || '',
+          dueDate,
+          priority: firstMilestone.priority,
+        },
+      });
+    }
+  };
+
   const onSubmit = (data: NewProjectForm) => {
     createProject.mutate(data);
   };
@@ -157,6 +190,26 @@ export default function ClientProjects() {
                 </DialogHeader>
                 <div className="grid gap-6 py-4">
                   <div className="grid gap-4">
+                    <h3 className="text-lg font-semibold">Quick Start Templates</h3>
+                    <div className="grid gap-2">
+                      <Label htmlFor="template">Choose a Template</Label>
+                      <Select
+                        onValueChange={handleTemplateChange}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a template or start from scratch" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">Start from scratch</SelectItem>
+                          {templates?.map(template => (
+                            <SelectItem key={template.id} value={template.id.toString()}>
+                              {template.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
                     <h3 className="text-lg font-semibold">Project Details</h3>
                     <div className="grid gap-2">
                       <Label htmlFor="name">Project Name</Label>

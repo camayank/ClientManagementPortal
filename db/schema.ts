@@ -161,7 +161,12 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   }),
   documents: many(documents),
   milestones: many(milestones),
+  template: one(projectTemplates, {
+    fields: [projects.id],
+    references: [projectTemplates.id],
+  }),
 }));
+
 
 export const documentsRelations = relations(documents, ({ one }) => ({
   client: one(clients, {
@@ -215,6 +220,55 @@ export const insertMilestoneSchema = createInsertSchema(milestones);
 export const selectMilestoneSchema = createSelectSchema(milestones);
 export const insertMilestoneUpdateSchema = createInsertSchema(milestoneUpdates);
 export const selectMilestoneUpdateSchema = createSelectSchema(milestoneUpdates);
+
+// New Project Template Table
+export const projectTemplates = pgTable("project_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  businessType: text("business_type", {
+    enum: [
+      "bookkeeping",
+      "tax_return_preparation",
+      "audit_assurance",
+      "payroll_services",
+      "financial_planning",
+      "business_advisory",
+      "irs_representation",
+      "other"
+    ]
+  }).notNull(),
+  clientType: text("client_type", {
+    enum: [
+      "individual",
+      "small_business",
+      "corporation",
+      "non_profit",
+      "partnership",
+      "trust_estate"
+    ]
+  }).notNull(),
+  priority: text("priority", { enum: ["low", "medium", "high"] }).default("medium"),
+  estimatedHours: integer("estimated_hours"),
+  budget: integer("budget"),
+  defaultMilestones: jsonb("default_milestones"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Add relations
+export const projectTemplatesRelations = relations(projectTemplates, ({ many }) => ({
+  projects: many(projects),
+}));
+
+// Add to existing relations
+
+// Add schema validation
+export const insertProjectTemplateSchema = createInsertSchema(projectTemplates);
+export const selectProjectTemplateSchema = createSelectSchema(projectTemplates);
+
+// Add types
+export type ProjectTemplate = typeof projectTemplates.$inferSelect;
+export type NewProjectTemplate = typeof projectTemplates.$inferInsert;
 
 // Types
 export type User = typeof users.$inferSelect;
