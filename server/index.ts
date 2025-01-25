@@ -6,6 +6,9 @@ import { corsMiddleware } from "./middleware/cors";
 
 const app = express();
 
+// Trust proxy must be set before rate limiter
+app.set('trust proxy', 1);
+
 // Apply CORS middleware first
 app.use(corsMiddleware);
 
@@ -68,11 +71,6 @@ app.use((req, res, next) => {
       message,
       // Only include error details in development
       ...(app.get("env") === "development" && { stack: err.stack }),
-      // Include CORS error details if applicable
-      ...(err.message === "Not allowed by CORS" && {
-        type: "CORS",
-        allowedOrigins: process.env.NODE_ENV === "development" ? ["*"] : ["example.com"] // Replace with your actual whitelist
-      })
     });
   });
 
