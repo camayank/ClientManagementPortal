@@ -3,7 +3,7 @@ import { Strategy as LocalStrategy } from "passport-local";
 import { type Express } from "express";
 import session from "express-session";
 import createMemoryStore from "memorystore";
-import { users } from "@db/schema";
+import { users, roles, userRoles } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
 
@@ -12,7 +12,9 @@ declare global {
     interface User {
       id: number;
       username: string;
-      role: 'admin' | 'client';
+      role: string;
+      permissions?: string[];
+      roles?: string[];
     }
   }
 }
@@ -58,12 +60,21 @@ export function setupAuth(app: Express) {
           return done(null, false, { message: "Incorrect password." });
         }
 
-        // Update last login timestamp
-        await db.update(users)
-          .set({ lastLogin: new Date() })
-          .where(eq(users.id, user.id));
+        // Get user roles and permissions
+        const userRolesData = await db
+          .select({
+            roleName: roles.name,
+          })
+          .from(userRoles)
+          .innerJoin(roles, eq(userRoles.roleId, roles.id))
+          .where(eq(userRoles.userId, user.id));
 
-        return done(null, user);
+        const userWithRoles = {
+          ...user,
+          roles: userRolesData.map(r => r.roleName),
+        };
+
+        return done(null, userWithRoles);
       } catch (err) {
         return done(err);
       }
@@ -86,7 +97,21 @@ export function setupAuth(app: Express) {
         return done(null, false);
       }
 
-      done(null, user);
+      // Get user roles and permissions
+      const userRolesData = await db
+        .select({
+          roleName: roles.name,
+        })
+        .from(userRoles)
+        .innerJoin(roles, eq(userRoles.roleId, roles.id))
+        .where(eq(userRoles.userId, user.id));
+
+      const userWithRoles = {
+        ...user,
+        roles: userRolesData.map(r => r.roleName),
+      };
+
+      done(null, userWithRoles);
     } catch (err) {
       done(err);
     }
@@ -111,6 +136,7 @@ export function setupAuth(app: Express) {
           id: user.id,
           username: user.username,
           role: user.role,
+          roles: (user as any).roles,
         });
       });
     })(req, res, next);
@@ -132,6 +158,7 @@ export function setupAuth(app: Express) {
         id: user.id,
         username: user.username,
         role: user.role,
+        roles: (user as any).roles,
       });
     }
     res.status(401).send("Not logged in");

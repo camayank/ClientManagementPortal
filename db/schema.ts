@@ -2,11 +2,41 @@ import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizz
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
 
+// Roles and Permissions tables
+export const roles = pgTable("roles", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const permissions = pgTable("permissions", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  resource: text("resource").notNull(),
+  action: text("action").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const rolePermissions = pgTable("role_permissions", {
+  id: serial("id").primaryKey(),
+  roleId: integer("role_id").references(() => roles.id).notNull(),
+  permissionId: integer("permission_id").references(() => permissions.id).notNull(),
+});
+
+export const userRoles = pgTable("user_roles", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  roleId: integer("role_id").references(() => roles.id).notNull(),
+});
+
+// Existing tables
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").unique().notNull(),
   password: text("password").notNull(),
-  role: text("role", { enum: ["admin", "client"] }).default("client").notNull(),
+  role: text("role", { enum: ["admin", "client"] }).default("client").notNull(), 
   fullName: text("full_name"),
   email: text("email"),
   lastLogin: timestamp("last_login"),
@@ -46,6 +76,20 @@ export const documents = pgTable("documents", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// Relations
+export const usersRelations = relations(users, ({ many }) => ({
+  roles: many(userRoles),
+}));
+
+export const rolesRelations = relations(roles, ({ many }) => ({
+  permissions: many(rolePermissions),
+  users: many(userRoles),
+}));
+
+export const permissionsRelations = relations(permissions, ({ many }) => ({
+  roles: many(rolePermissions),
+}));
 
 export const clientsRelations = relations(clients, ({ one, many }) => ({
   user: one(users, {
@@ -92,6 +136,10 @@ export const insertProjectSchema = createInsertSchema(projects);
 export const selectProjectSchema = createSelectSchema(projects);
 export const insertDocumentSchema = createInsertSchema(documents);
 export const selectDocumentSchema = createSelectSchema(documents);
+export const insertRoleSchema = createInsertSchema(roles);
+export const selectRoleSchema = createSelectSchema(roles);
+export const insertPermissionSchema = createInsertSchema(permissions);
+export const selectPermissionSchema = createSelectSchema(permissions);
 
 // Types
 export type User = typeof users.$inferSelect;
@@ -102,3 +150,7 @@ export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type Document = typeof documents.$inferSelect;
 export type NewDocument = typeof documents.$inferInsert;
+export type Role = typeof roles.$inferSelect;
+export type NewRole = typeof roles.$inferInsert;
+export type Permission = typeof permissions.$inferSelect;
+export type NewPermission = typeof permissions.$inferInsert;

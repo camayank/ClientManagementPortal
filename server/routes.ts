@@ -6,11 +6,11 @@ import { db } from "@db";
 import { clients, documents, projects, users } from "@db/schema";
 import multer from "multer";
 import { eq, and, sql } from "drizzle-orm";
+import { requirePermission } from "./middleware/check-permission";
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
 import { format, subDays, parseISO } from 'date-fns';
-
 
 const upload = multer({
   dest: 'uploads/',
@@ -31,16 +31,8 @@ export function registerRoutes(app: Express): Server {
   // Initialize WebSocket service
   wsService = new WebSocketService(httpServer);
 
-  // Add document upload notification
-  app.post("/api/documents/upload", upload.single('file'), async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Unauthorized");
-    }
-
-    if (!req.file) {
-      return res.status(400).send("No file uploaded");
-    }
-
+  // Document management routes with permission checks
+  app.post("/api/documents/upload", requirePermission('documents', 'create'), upload.single('file'), async (req, res) => {
     try {
       const user = req.user as any;
 
@@ -141,12 +133,8 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Add user management routes
-  app.get("/api/admin/users", async (req, res) => {
-    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
-      return res.status(403).send("Unauthorized");
-    }
-
+  // Add user management routes with permission checks
+  app.get("/api/admin/users", requirePermission('users', 'read'), async (req, res) => {
     try {
       const userList = await db.select().from(users);
       res.json(userList);
@@ -156,11 +144,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.post("/api/admin/users", async (req, res) => {
-    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
-      return res.status(403).send("Unauthorized");
-    }
-
+  app.post("/api/admin/users", requirePermission('users', 'create'), async (req, res) => {
     const { username, password, role, fullName, email } = req.body;
 
     try {
@@ -202,11 +186,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.patch("/api/admin/users/:id/reset-password", async (req, res) => {
-    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
-      return res.status(403).send("Unauthorized");
-    }
-
+  app.patch("/api/admin/users/:id/reset-password", requirePermission('users', 'update'), async (req, res) => {
     const { id } = req.params;
     const { newPassword } = req.body;
 
@@ -223,12 +203,8 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Client management routes
-  app.get("/api/clients", async (req, res) => {
-    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
-      return res.status(403).send("Unauthorized");
-    }
-
+  // Client management routes with permission checks
+  app.get("/api/clients", requirePermission('clients', 'read'), async (req, res) => {
     try {
       const clientList = await db.select({
         id: clients.id,
@@ -248,11 +224,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.post("/api/clients", async (req, res) => {
-    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
-      return res.status(403).send("Unauthorized");
-    }
-
+  app.post("/api/clients", requirePermission('clients', 'create'), async (req, res) => {
     const { company, email, password } = req.body;
 
     try {
@@ -281,11 +253,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.patch("/api/clients/:id", async (req, res) => {
-    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
-      return res.status(403).send("Unauthorized");
-    }
-
+  app.patch("/api/clients/:id", requirePermission('clients', 'update'), async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
@@ -302,12 +270,8 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Project management routes
-  app.get("/api/projects", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Unauthorized");
-    }
-
+  // Project management routes with permission checks
+  app.get("/api/projects", requirePermission('projects', 'read'), async (req, res) => {
     const user = req.user as any;
     let query = db.select({
       id: projects.id,
@@ -339,11 +303,7 @@ export function registerRoutes(app: Express): Server {
     res.json(projectList);
   });
 
-  app.post("/api/projects", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Unauthorized");
-    }
-
+  app.post("/api/projects", requirePermission('projects', 'create'), async (req, res) => {
     const { name, lastDate } = req.body;
     const user = req.user as any;
 
@@ -386,12 +346,8 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Document management routes
-  app.get("/api/documents", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Unauthorized");
-    }
-
+  // Document management routes with permission checks
+  app.get("/api/documents", requirePermission('documents', 'read'), async (req, res) => {
     try {
       const user = req.user as any;
       let query = db.select().from(documents);
@@ -419,22 +375,14 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.get("/api/documents/all", async (req, res) => {
-    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
-      return res.status(403).send("Unauthorized");
-    }
-
+  app.get("/api/documents/all", requirePermission('documents', 'read'), async (req, res) => {
     const docs = await db.select().from(documents);
     res.json(docs);
   });
 
 
   // Modify the documents GET endpoint to handle the new file path structure
-  app.get("/api/documents/:id/view", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Unauthorized");
-    }
-
+  app.get("/api/documents/:id/view", requirePermission('documents', 'read'), async (req, res) => {
     try {
       const docId = parseInt(req.params.id);
       const [doc] = await db.select()
@@ -479,11 +427,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Add document download route with consistent path handling
-  app.get("/api/documents/:id/download", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Unauthorized");
-    }
-
+  app.get("/api/documents/:id/download", requirePermission('documents', 'read'), async (req, res) => {
     try {
       const docId = parseInt(req.params.id);
       const [doc] = await db.select()
@@ -527,12 +471,8 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Admin statistics
-  app.get("/api/admin/stats", async (req, res) => {
-    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
-      return res.status(403).send("Unauthorized");
-    }
-
+  // Admin statistics with permission checks
+  app.get("/api/admin/stats", requirePermission('stats', 'read'), async (req, res) => {
     try {
       const [totalClients] = await db.select({ count: sql<number>`count(*)` }).from(clients);
       const [activeProjects] = await db.select({ count: sql<number>`count(*)` })
@@ -573,12 +513,8 @@ export function registerRoutes(app: Express): Server {
   });
 
 
-  // Add report generation endpoints
-  app.get("/api/admin/reports", async (req, res) => {
-    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
-      return res.status(403).send("Unauthorized");
-    }
-
+  // Add report generation endpoints with permission checks
+  app.get("/api/admin/reports", requirePermission('reports', 'read'), async (req, res) => {
     const { type, startDate, endDate } = req.query;
 
     if (!startDate || !endDate) {
@@ -720,11 +656,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.post("/api/admin/reports/:type/download", async (req, res) => {
-    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
-      return res.status(403).send("Unauthorized");
-    }
-
+  app.post("/api/admin/reports/:type/download", requirePermission('reports', 'download'), async (req, res) => {
     const { type } = req.params;
     const { startDate, endDate } = req.body;
 
@@ -793,11 +725,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Add document download route
-  app.get("/api/documents/:id/download", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Unauthorized");
-    }
-
+  app.get("/api/documents/:id/download", requirePermission('documents', 'read'), async (req, res) => {
     try {
       const docId = parseInt(req.params.id);
       const [doc] = await db.select()
