@@ -12,7 +12,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UserCircle2, Users } from "lucide-react";
 
 export default function AuthPage() {
-  const [role, setRole] = useState<"client" | "admin">("client");
+  const [isLogin, setIsLogin] = useState(true);
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
   const { login, register } = useUser();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
@@ -27,9 +28,10 @@ export default function AuthPage() {
 
   async function onSubmit(data: NewUser) {
     try {
-      // Update the role based on the toggle
-      data.role = role;
-      const result = await (true ? login(data) : register(data)); //Consider revisiting this logic.  Should it be login always or a conditional?
+      // Set role based on admin toggle
+      data.role = showAdminLogin ? "admin" : "client";
+      const result = await (isLogin ? login(data) : register(data));
+
       if (!result.ok) {
         toast({
           variant: "destructive",
@@ -38,7 +40,7 @@ export default function AuthPage() {
         });
       } else {
         // Redirect based on role
-        setLocation(role === "admin" ? "/admin" : "/client");
+        setLocation(showAdminLogin ? "/admin" : "/client");
       }
     } catch (error: any) {
       toast({
@@ -57,16 +59,21 @@ export default function AuthPage() {
         </CardHeader>
         <CardContent>
           <div className="mb-6">
-            <Tabs value={role} onValueChange={(value) => setRole(value as "client" | "admin")}>
+            <Tabs 
+              value={showAdminLogin ? "admin" : "client"} 
+              onValueChange={(value) => setShowAdminLogin(value === "admin")}
+            >
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="client" className="flex items-center gap-2">
                   <UserCircle2 className="w-4 h-4" />
                   Client Portal
                 </TabsTrigger>
-                <TabsTrigger value="admin" className="flex items-center gap-2">
-                  <Users className="w-4 h-4" />
-                  Admin Portal
-                </TabsTrigger>
+                {isLogin && (
+                  <TabsTrigger value="admin" className="flex items-center gap-2">
+                    <Users className="w-4 h-4" />
+                    Admin Portal
+                  </TabsTrigger>
+                )}
               </TabsList>
             </Tabs>
           </div>
@@ -78,9 +85,9 @@ export default function AuthPage() {
                 name="username"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Username</FormLabel>
+                    <FormLabel>Email</FormLabel>
                     <FormControl>
-                      <Input {...field} />
+                      <Input type="email" placeholder="Enter your email" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -93,19 +100,33 @@ export default function AuthPage() {
                   <FormItem>
                     <FormLabel>Password</FormLabel>
                     <FormControl>
-                      <Input type="password" {...field} />
+                      <Input type="password" placeholder="Enter your password" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
               <Button type="submit" className="w-full">
-                Login
+                {isLogin ? "Login" : "Create Account"}
               </Button>
+
+              {!showAdminLogin && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full"
+                  onClick={() => setIsLogin(!isLogin)}
+                >
+                  {isLogin ? "Need an account? Sign up" : "Already have an account? Login"}
+                </Button>
+              )}
+
               <div className="text-center text-sm text-gray-500">
-                {role === "client" 
-                  ? "Access your client portal to manage documents and projects"
-                  : "Administrative access for managing clients and system"}
+                {showAdminLogin 
+                  ? "Administrative access for managing clients and system" 
+                  : (isLogin 
+                    ? "Access your client portal to manage documents and projects"
+                    : "Create an account to start managing your documents and projects")}
               </div>
             </form>
           </Form>
