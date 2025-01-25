@@ -4,8 +4,7 @@ import { eq, and } from "drizzle-orm";
 import type { Request, Response, NextFunction } from "express";
 
 export async function hasPermission(userId: number, resource: string, action: string): Promise<boolean> {
-  const userPerms = await db
-    .select()
+  const userPerms = await db.select()
     .from(userRoles)
     .innerJoin(rolePermissions, eq(userRoles.roleId, rolePermissions.roleId))
     .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
@@ -26,6 +25,7 @@ export function requirePermission(resource: string, action: string) {
 
     const hasAccess = await hasPermission(req.user.id, resource, action);
     if (!hasAccess) {
+      console.log(`Permission denied for user ${req.user.id} on ${resource}:${action}`);
       return res.status(403).send("Forbidden");
     }
 
