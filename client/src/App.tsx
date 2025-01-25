@@ -10,6 +10,7 @@ import AdminDashboard from "@/pages/admin/dashboard";
 import ClientDashboard from "@/pages/client/dashboard";
 import AdminClients from "@/pages/admin/clients";
 import AdminDocuments from "@/pages/admin/documents";
+import AdminCredentials from "@/pages/admin/credentials";
 import ClientDocuments from "@/pages/client/documents";
 import PersonalInfo from "@/pages/client/personal-info";
 import ClientProjects from "@/pages/client/projects";
@@ -52,6 +53,7 @@ function Router() {
           <Route path="/admin" component={() => <ProtectedRoute component={AdminDashboard} isAdmin={true} />} />
           <Route path="/admin/clients" component={() => <ProtectedRoute component={AdminClients} isAdmin={true} />} />
           <Route path="/admin/documents" component={() => <ProtectedRoute component={AdminDocuments} isAdmin={true} />} />
+          <Route path="/admin/credentials" component={() => <ProtectedRoute component={AdminCredentials} isAdmin={true} />} />
         </>
       ) : (
         <>

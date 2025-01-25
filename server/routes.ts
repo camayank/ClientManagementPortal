@@ -16,48 +16,85 @@ const upload = multer({
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
 
-  // Admin statistics
-  app.get("/api/admin/stats", async (req, res) => {
+  // Add user management routes
+  app.get("/api/admin/users", async (req, res) => {
     if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
       return res.status(403).send("Unauthorized");
     }
 
     try {
-      const [totalClients] = await db.select({ count: sql<number>`count(*)` }).from(clients);
-      const [activeProjects] = await db.select({ count: sql<number>`count(*)` })
-        .from(projects)
-        .where(eq(projects.status, 'active'));
-
-      const [newClientsThisMonth] = await db.select({ count: sql<number>`count(*)` })
-        .from(clients)
-        .where(sql`created_at >= date_trunc('month', current_date)`);
-
-      const [completedProjectsThisMonth] = await db.select({ count: sql<number>`count(*)` })
-        .from(projects)
-        .where(and(
-          eq(projects.status, 'completed'),
-          sql`created_at >= date_trunc('month', current_date)`
-        ));
-
-      const [activeUsers] = await db.select({ count: sql<number>`count(*)` })
-        .from(users)
-        .where(sql`last_login >= now() - interval '24 hours'`);
-
-      const stats = {
-        totalClients: totalClients.count,
-        activeProjects: activeProjects.count,
-        newClients: newClientsThisMonth.count,
-        completedProjects: completedProjectsThisMonth.count,
-        activeUsers: activeUsers.count,
-        pendingReviews: 0, // To be implemented with review system
-        clientsWithPending: 0,
-        pendingActions: 0,
-      };
-
-      res.json(stats);
+      const userList = await db.select().from(users);
+      res.json(userList);
     } catch (error) {
-      console.error("Error fetching admin stats:", error);
-      res.status(500).send("Failed to fetch admin statistics");
+      console.error("Error fetching users:", error);
+      res.status(500).send("Failed to fetch users");
+    }
+  });
+
+  app.post("/api/admin/users", async (req, res) => {
+    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
+      return res.status(403).send("Unauthorized");
+    }
+
+    const { username, password, role, fullName, email } = req.body;
+
+    try {
+      // Check if username already exists
+      const [existingUser] = await db.select()
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
+
+      if (existingUser) {
+        return res.status(400).send("Username already exists");
+      }
+
+      // Create new user
+      const [newUser] = await db.insert(users)
+        .values({
+          username,
+          password, // Note: This should be hashed in production
+          role,
+          fullName,
+          email,
+        })
+        .returning();
+
+      // If it's a client user, create a client profile
+      if (role === 'client') {
+        await db.insert(clients)
+          .values({
+            userId: newUser.id,
+            company: fullName, // Using fullName as company name initially
+            status: 'active',
+          });
+      }
+
+      res.json(newUser);
+    } catch (error) {
+      console.error("Error creating user:", error);
+      res.status(500).send("Failed to create user");
+    }
+  });
+
+  app.post("/api/admin/users/:id/reset-password", async (req, res) => {
+    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
+      return res.status(403).send("Unauthorized");
+    }
+
+    const { id } = req.params;
+    const { newPassword } = req.body;
+
+    try {
+      const [updatedUser] = await db.update(users)
+        .set({ password: newPassword }) // Note: This should be hashed in production
+        .where(eq(users.id, parseInt(id)))
+        .returning();
+
+      res.json(updatedUser);
+    } catch (error) {
+      console.error("Error resetting password:", error);
+      res.status(500).send("Failed to reset password");
     }
   });
 
@@ -76,8 +113,8 @@ export function registerRoutes(app: Express): Server {
         createdAt: clients.createdAt,
         user: users,
       })
-      .from(clients)
-      .leftJoin(users, eq(clients.userId, users.id));
+        .from(clients)
+        .leftJoin(users, eq(clients.userId, users.id));
 
       res.json(clientList);
     } catch (error) {
@@ -156,8 +193,8 @@ export function registerRoutes(app: Express): Server {
       assignedTo: projects.assignedTo,
       assignedUser: users,
     })
-    .from(projects)
-    .leftJoin(users, eq(projects.assignedTo, users.id));
+      .from(projects)
+      .leftJoin(users, eq(projects.assignedTo, users.id));
 
     if (user.role === "client") {
       // Clients can only see their own projects
@@ -232,7 +269,7 @@ export function registerRoutes(app: Express): Server {
 
     const docs = await db.select().from(documents)
       .where(
-        (req.user as any).role === "admin" 
+        (req.user as any).role === "admin"
           ? undefined
           : eq(documents.clientId, (req.user as any).clientId)
       );
@@ -274,6 +311,52 @@ export function registerRoutes(app: Express): Server {
       res.status(500).send("Upload failed");
     }
   });
+
+  // Admin statistics
+  app.get("/api/admin/stats", async (req, res) => {
+    if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
+      return res.status(403).send("Unauthorized");
+    }
+
+    try {
+      const [totalClients] = await db.select({ count: sql<number>`count(*)` }).from(clients);
+      const [activeProjects] = await db.select({ count: sql<number>`count(*)` })
+        .from(projects)
+        .where(eq(projects.status, 'active'));
+
+      const [newClientsThisMonth] = await db.select({ count: sql<number>`count(*)` })
+        .from(clients)
+        .where(sql`created_at >= date_trunc('month', current_date)`);
+
+      const [completedProjectsThisMonth] = await db.select({ count: sql<number>`count(*)` })
+        .from(projects)
+        .where(and(
+          eq(projects.status, 'completed'),
+          sql`created_at >= date_trunc('month', current_date)`
+        ));
+
+      const [activeUsers] = await db.select({ count: sql<number>`count(*)` })
+        .from(users)
+        .where(sql`last_login >= now() - interval '24 hours'`);
+
+      const stats = {
+        totalClients: totalClients.count,
+        activeProjects: activeProjects.count,
+        newClients: newClientsThisMonth.count,
+        completedProjects: completedProjectsThisMonth.count,
+        activeUsers: activeUsers.count,
+        pendingReviews: 0, // To be implemented with review system
+        clientsWithPending: 0,
+        pendingActions: 0,
+      };
+
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching admin stats:", error);
+      res.status(500).send("Failed to fetch admin statistics");
+    }
+  });
+
 
   const httpServer = createServer(app);
   return httpServer;
