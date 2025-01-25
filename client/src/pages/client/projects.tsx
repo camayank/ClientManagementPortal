@@ -85,11 +85,11 @@ export default function ClientProjects() {
       priority: "medium",
       estimatedHours: "",
       budget: "",
-      lastDate: "",
+      lastDate: format(addDays(new Date(), 30), 'yyyy-MM-dd'), // Default to 30 days from now
       initialMilestone: {
         title: "",
         description: "",
-        dueDate: "",
+        dueDate: format(addDays(new Date(), 7), 'yyyy-MM-dd'), // Default to 7 days from now
         priority: "medium",
       },
     },
@@ -137,30 +137,37 @@ export default function ClientProjects() {
   });
 
   const handleTemplateChange = (templateId: string) => {
+    if (!templateId) {
+      form.reset();
+      return;
+    }
+
     const template = templates?.find(t => t.id === parseInt(templateId));
     if (template) {
       // Calculate relative dates for milestones
-      const firstMilestone = template.defaultMilestones[0];
-      const dueDate = firstMilestone.dueDate.startsWith('relative:') 
-        ? format(addDays(new Date(), parseInt(firstMilestone.dueDate.split('+')[1])), 'yyyy-MM-dd')
-        : format(new Date(firstMilestone.dueDate), 'yyyy-MM-dd');
+      const firstMilestone = template.defaultMilestones?.[0];
+      if (firstMilestone) {
+        const dueDate = firstMilestone.dueDate.startsWith('relative:') 
+          ? format(addDays(new Date(), parseInt(firstMilestone.dueDate.split('+')[1])), 'yyyy-MM-dd')
+          : format(new Date(firstMilestone.dueDate), 'yyyy-MM-dd');
 
-      form.reset({
-        name: template.name,
-        description: template.description || '',
-        businessType: template.businessType,
-        clientType: template.clientType,
-        priority: template.priority,
-        estimatedHours: template.estimatedHours?.toString() || '',
-        budget: template.budget?.toString() || '',
-        lastDate: format(addDays(new Date(), 60), 'yyyy-MM-dd'), // Default to 60 days
-        initialMilestone: {
-          title: firstMilestone.title,
-          description: firstMilestone.description || '',
-          dueDate,
-          priority: firstMilestone.priority,
-        },
-      });
+        form.reset({
+          name: template.name,
+          description: template.description || '',
+          businessType: template.businessType,
+          clientType: template.clientType,
+          priority: template.priority || 'medium',
+          estimatedHours: template.estimatedHours?.toString() || '',
+          budget: template.budget?.toString() || '',
+          lastDate: format(addDays(new Date(), 60), 'yyyy-MM-dd'), // Default to 60 days
+          initialMilestone: {
+            title: firstMilestone.title,
+            description: firstMilestone.description || '',
+            dueDate,
+            priority: firstMilestone.priority || 'medium',
+          },
+        });
+      }
     }
   };
 
@@ -180,7 +187,7 @@ export default function ClientProjects() {
             <DialogTrigger asChild>
               <Button className="bg-blue-600">Add New Project</Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <form onSubmit={form.handleSubmit(onSubmit)}>
                 <DialogHeader>
                   <DialogTitle>Create New Project</DialogTitle>
@@ -200,7 +207,7 @@ export default function ClientProjects() {
                           <SelectValue placeholder="Select a template or start from scratch" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Start from scratch</SelectItem>
+                          <SelectItem value="0">Start from scratch</SelectItem>
                           {templates?.map(template => (
                             <SelectItem key={template.id} value={template.id.toString()}>
                               {template.name}
