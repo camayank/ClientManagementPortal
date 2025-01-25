@@ -30,6 +30,10 @@ declare global {
 
 const SALT_ROUNDS = 10;
 
+export async function hashPassword(password: string): Promise<string> {
+  return bcryptHash(password, SALT_ROUNDS);
+}
+
 export function setupAuth(app: Express) {
   const MemoryStore = createMemoryStore(session);
   const sessionSettings: session.SessionOptions = {

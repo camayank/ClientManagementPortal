@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketService } from "./websocket/server";
-import { setupAuth } from "./auth";
+import { setupAuth, hashPassword } from "./auth";
 import { db } from "@db";
 import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates } from "@db/schema";
 import multer from "multer";
@@ -567,6 +567,7 @@ export function registerRoutes(app: Express): Server {
   });
 
 
+
   app.get("/api/admin/reports", requirePermission('reports', 'read'), async (req, res) => {
     const { type, startDate, endDate } = req.query;
     if (!startDate || !endDate) {
@@ -841,21 +842,26 @@ export function registerRoutes(app: Express): Server {
         .from(users)
         .where(eq(users.role, 'admin'))
         .limit(1);
+
       if (existingAdmin) {
         return res.status(400).send("Admin user already exists");
       }
+
       const { username, password } = req.body;
       if (!username || !password) {
         return res.status(400).send("Username and password are required");
       }
+
+      const hashedPassword = await hashPassword(password);
       const [adminUser] = await db
         .insert(users)
         .values({
           username,
-          password,
+          password: hashedPassword,
           role: 'admin',
         })
         .returning();
+
       res.json({
         message: "Admin user created successfully",
         user: { id: adminUser.id, username: adminUser.username }
