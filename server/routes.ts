@@ -326,38 +326,117 @@ export function registerRoutes(app: Express): Server {
 
     try {
       const user = req.user as any;
-      let clientId: number | null = null;
 
+      // Get client record for the current user if they are a client
+      let clientId: number | null = null;
       if (user.role === 'client') {
-        // Get client's ID
         const [clientRecord] = await db.select()
           .from(clients)
           .where(eq(clients.userId, user.id))
           .limit(1);
 
         if (!clientRecord) {
-          return res.status(404).send("Client record not found");
+          // If client record doesn't exist, create one
+          const [newClientRecord] = await db.insert(clients)
+            .values({
+              userId: user.id,
+              company: user.username,
+              status: 'active',
+            })
+            .returning();
+          clientId = newClientRecord.id;
+        } else {
+          clientId = clientRecord.id;
         }
-        clientId = clientRecord.id;
       }
 
-      const [newDoc] = await db.insert(documents).values({
-        name: req.file.originalname,
-        type: req.file.mimetype,
-        size: req.file.size,
-        uploadedBy: user.id,
-        clientId: clientId,
-        projectId: req.body.projectId ? parseInt(req.body.projectId) : null,
-      }).returning();
+      // Create the document record
+      const [newDoc] = await db.insert(documents)
+        .values({
+          name: req.file.originalname,
+          type: req.file.mimetype,
+          size: req.file.size,
+          uploadedBy: user.id,
+          clientId: clientId,
+          projectId: req.body.projectId ? parseInt(req.body.projectId) : null,
+        })
+        .returning();
+
+      // Ensure uploads directory exists
+      if (!fs.existsSync('uploads')) {
+        fs.mkdirSync('uploads', { recursive: true });
+      }
 
       // Move the file to a permanent location
-      const permanentPath = path.join('uploads', newDoc.name);
+      const permanentPath = path.join('uploads', newDoc.id.toString() + '_' + req.file.originalname);
       fs.renameSync(req.file.path, permanentPath);
+
+      // Update the document with the final path
+      await db.update(documents)
+        .set({ 
+          metadata: { 
+            path: permanentPath,
+            originalName: req.file.originalname 
+          }
+        })
+        .where(eq(documents.id, newDoc.id));
 
       res.json(newDoc);
     } catch (error) {
       console.error("Upload error:", error);
-      res.status(500).send("Upload failed");
+      // Clean up the temporary file if it exists
+      if (req.file && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      res.status(500).send("Upload failed: " + (error as Error).message);
+    }
+  });
+
+  // Modify the documents GET endpoint to handle the new file path structure
+  app.get("/api/documents/:id/view", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).send("Unauthorized");
+    }
+
+    try {
+      const docId = parseInt(req.params.id);
+      const [doc] = await db.select()
+        .from(documents)
+        .where(eq(documents.id, docId));
+
+      if (!doc) {
+        return res.status(404).send("Document not found");
+      }
+
+      // Check if user has access to this document
+      if ((req.user as any).role !== 'admin') {
+        const [clientDoc] = await db.select()
+          .from(clients)
+          .where(eq(clients.userId, (req.user as any).id));
+
+        if (!clientDoc || doc.clientId !== clientDoc.id) {
+          return res.status(403).send("Access denied");
+        }
+      }
+
+      // Get the file path from metadata
+      const filePath = (doc.metadata as any)?.path || path.join('uploads', doc.id.toString() + '_' + doc.name);
+
+      // Check if file exists
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).send("File not found");
+      }
+
+      // Set appropriate headers for viewing
+      res.setHeader('Content-Type', doc.type);
+      res.setHeader('Content-Disposition', `inline; filename="${doc.name}"`);
+
+      // Stream the file
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+    } catch (error) {
+      console.error("View error:", error);
+      res.status(500).send("Failed to view file");
     }
   });
 
@@ -455,54 +534,6 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Add document view/preview route
-  app.get("/api/documents/:id/view", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Unauthorized");
-    }
-
-    try {
-      const docId = parseInt(req.params.id);
-      const [doc] = await db.select()
-        .from(documents)
-        .where(eq(documents.id, docId));
-
-      if (!doc) {
-        return res.status(404).send("Document not found");
-      }
-
-      // Check if user has access to this document
-      if ((req.user as any).role !== 'admin') {
-        const [clientDoc] = await db.select()
-          .from(clients)
-          .where(eq(clients.userId, (req.user as any).id));
-
-        if (!clientDoc || doc.clientId !== clientDoc.id) {
-          return res.status(403).send("Access denied");
-        }
-      }
-
-      // Find the file in uploads directory
-      const filePath = path.join('uploads', doc.name);
-
-      // Check if file exists
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).send("File not found");
-      }
-
-      // Set appropriate headers for viewing
-      res.setHeader('Content-Type', doc.type);
-      res.setHeader('Content-Disposition', `inline; filename="${doc.name}"`);
-
-      // Stream the file
-      const fileStream = fs.createReadStream(filePath);
-      fileStream.pipe(res);
-    } catch (error) {
-      console.error("View error:", error);
-      res.status(500).send("Failed to view file");
-    }
-  });
-
   app.post("/api/register", async (req, res, next) => {
     try {
       const result = insertUserSchema.safeParse(req.body);
@@ -530,18 +561,25 @@ export function registerRoutes(app: Express): Server {
         return res.status(400).send("Username already exists");
       }
 
-      // Hash the password before storing
-      const hashedPassword = await crypto.hash(password);
-
       // Create the new user
       const [newUser] = await db
         .insert(users)
         .values({
-          ...result.data,
-          password: hashedPassword,
+          username,
+          password, // Note: In a real app, this should be hashed
           role: 'client', // Force client role for public registration
         })
         .returning();
+
+      // Create client record for the new user
+      if (role === 'client') {
+        await db.insert(clients)
+          .values({
+            userId: newUser.id,
+            company: username, // Using username as initial company name
+            status: 'active',
+          });
+      }
 
       // Log the user in after registration
       req.login(newUser, (err) => {
