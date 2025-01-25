@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { WebSocketService } from "./websocket/server";
 import { setupAuth } from "./auth";
 import { db } from "@db";
 import { clients, documents, projects, users } from "@db/schema";
@@ -16,8 +17,127 @@ const upload = multer({
   },
 });
 
+// Export the WebSocket service instance
+export let wsService: WebSocketService;
+
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
+
+  // Create HTTP server
+  const httpServer = createServer(app);
+
+  // Initialize WebSocket service
+  wsService = new WebSocketService(httpServer);
+
+  // Add document upload notification
+  app.post("/api/documents/upload", upload.single('file'), async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).send("Unauthorized");
+    }
+
+    if (!req.file) {
+      return res.status(400).send("No file uploaded");
+    }
+
+    try {
+      const user = req.user as any;
+
+      // Get client record for the current user if they are a client
+      let clientId: number | null = null;
+      if (user.role === 'client') {
+        const [clientRecord] = await db.select()
+          .from(clients)
+          .where(eq(clients.userId, user.id))
+          .limit(1);
+
+        if (!clientRecord) {
+          const [newClientRecord] = await db.insert(clients)
+            .values({
+              userId: user.id,
+              company: user.username,
+              status: 'active',
+            })
+            .returning();
+          clientId = newClientRecord.id;
+        } else {
+          clientId = clientRecord.id;
+        }
+      }
+
+      // Create the document record
+      const [newDoc] = await db.insert(documents)
+        .values({
+          name: req.file.originalname,
+          type: req.file.mimetype,
+          size: req.file.size,
+          uploadedBy: user.id,
+          clientId: clientId,
+          projectId: req.body.projectId ? parseInt(req.body.projectId) : null,
+        })
+        .returning();
+
+      // Ensure uploads directory exists
+      if (!fs.existsSync('uploads')) {
+        fs.mkdirSync('uploads', { recursive: true });
+      }
+
+      // Move the file to a permanent location
+      const permanentPath = path.join('uploads', newDoc.id.toString() + '_' + req.file.originalname);
+      fs.renameSync(req.file.path, permanentPath);
+
+      // Update the document with the final path
+      await db.update(documents)
+        .set({
+          metadata: {
+            path: permanentPath,
+            originalName: req.file.originalname
+          }
+        })
+        .where(eq(documents.id, newDoc.id));
+
+      // Send real-time notification
+      if (user.role === 'client') {
+        // Notify admins about new document upload
+        wsService.broadcastToAdmin({
+          type: 'notification',
+          payload: {
+            type: 'document_upload',
+            message: `New document uploaded by client: ${user.username}`,
+            document: {
+              id: newDoc.id,
+              name: newDoc.name,
+              type: newDoc.type,
+            }
+          }
+        });
+      } else {
+        // Notify specific client about document upload
+        if (clientId) {
+          wsService.sendToUser(clientId, {
+            type: 'notification',
+            payload: {
+              type: 'document_upload',
+              message: `New document uploaded to your account: ${newDoc.name}`,
+              document: {
+                id: newDoc.id,
+                name: newDoc.name,
+                type: newDoc.type,
+              }
+            }
+          });
+        }
+      }
+
+      res.json(newDoc);
+    } catch (error) {
+      console.error("Upload error:", error);
+      // Clean up the temporary file if it exists
+      if (req.file && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      res.status(500).send("Upload failed: " + (error as Error).message);
+    }
+  });
 
   // Add user management routes
   app.get("/api/admin/users", async (req, res) => {
@@ -306,82 +426,6 @@ export function registerRoutes(app: Express): Server {
     res.json(docs);
   });
 
-  app.post("/api/documents/upload", upload.single('file'), async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Unauthorized");
-    }
-
-    if (!req.file) {
-      return res.status(400).send("No file uploaded");
-    }
-
-    try {
-      const user = req.user as any;
-
-      // Get client record for the current user if they are a client
-      let clientId: number | null = null;
-      if (user.role === 'client') {
-        const [clientRecord] = await db.select()
-          .from(clients)
-          .where(eq(clients.userId, user.id))
-          .limit(1);
-
-        if (!clientRecord) {
-          // If client record doesn't exist, create one
-          const [newClientRecord] = await db.insert(clients)
-            .values({
-              userId: user.id,
-              company: user.username,
-              status: 'active',
-            })
-            .returning();
-          clientId = newClientRecord.id;
-        } else {
-          clientId = clientRecord.id;
-        }
-      }
-
-      // Create the document record
-      const [newDoc] = await db.insert(documents)
-        .values({
-          name: req.file.originalname,
-          type: req.file.mimetype,
-          size: req.file.size,
-          uploadedBy: user.id,
-          clientId: clientId,
-          projectId: req.body.projectId ? parseInt(req.body.projectId) : null,
-        })
-        .returning();
-
-      // Ensure uploads directory exists
-      if (!fs.existsSync('uploads')) {
-        fs.mkdirSync('uploads', { recursive: true });
-      }
-
-      // Move the file to a permanent location
-      const permanentPath = path.join('uploads', newDoc.id.toString() + '_' + req.file.originalname);
-      fs.renameSync(req.file.path, permanentPath);
-
-      // Update the document with the final path
-      await db.update(documents)
-        .set({
-          metadata: {
-            path: permanentPath,
-            originalName: req.file.originalname
-          }
-        })
-        .where(eq(documents.id, newDoc.id));
-
-      res.json(newDoc);
-    } catch (error) {
-      console.error("Upload error:", error);
-      // Clean up the temporary file if it exists
-      if (req.file && fs.existsSync(req.file.path)) {
-        fs.unlinkSync(req.file.path);
-      }
-      res.status(500).send("Upload failed: " + (error as Error).message);
-    }
-  });
 
   // Modify the documents GET endpoint to handle the new file path structure
   app.get("/api/documents/:id/view", async (req, res) => {
@@ -587,6 +631,5 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  const httpServer = createServer(app);
   return httpServer;
 }
