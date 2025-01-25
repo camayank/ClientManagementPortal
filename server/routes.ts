@@ -80,7 +80,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.post("/api/admin/users/:id/reset-password", async (req, res) => {
+  app.patch("/api/admin/users/:id/reset-password", async (req, res) => {
     if (!req.isAuthenticated() || (req.user as any).role !== "admin") {
       return res.status(403).send("Unauthorized");
     }
@@ -270,14 +270,40 @@ export function registerRoutes(app: Express): Server {
       return res.status(401).send("Unauthorized");
     }
 
-    const docs = await db.select().from(documents)
-      .where(
-        (req.user as any).role === "admin"
-          ? undefined
-          : eq(documents.clientId, (req.user as any).clientId)
-      );
+    try {
+      const user = req.user as any;
+      let query = db.select({
+        id: documents.id,
+        name: documents.name,
+        type: documents.type,
+        size: documents.size,
+        createdAt: documents.createdAt,
+        clientId: documents.clientId,
+        projectId: documents.projectId,
+        uploadedBy: documents.uploadedBy,
+      }).from(documents);
 
-    res.json(docs);
+      if (user.role === 'client') {
+        // Get client's ID first
+        const [clientRecord] = await db.select()
+          .from(clients)
+          .where(eq(clients.userId, user.id))
+          .limit(1);
+
+        if (!clientRecord) {
+          return res.status(404).send("Client record not found");
+        }
+
+        // Filter documents by client ID
+        query = query.where(eq(documents.clientId, clientRecord.id));
+      }
+
+      const docs = await query;
+      res.json(docs);
+    } catch (error) {
+      console.error("Error fetching documents:", error);
+      res.status(500).send("Failed to fetch documents");
+    }
   });
 
   app.get("/api/documents/all", async (req, res) => {
@@ -299,14 +325,34 @@ export function registerRoutes(app: Express): Server {
     }
 
     try {
+      const user = req.user as any;
+      let clientId: number | null = null;
+
+      if (user.role === 'client') {
+        // Get client's ID
+        const [clientRecord] = await db.select()
+          .from(clients)
+          .where(eq(clients.userId, user.id))
+          .limit(1);
+
+        if (!clientRecord) {
+          return res.status(404).send("Client record not found");
+        }
+        clientId = clientRecord.id;
+      }
+
       const [newDoc] = await db.insert(documents).values({
         name: req.file.originalname,
         type: req.file.mimetype,
         size: req.file.size,
-        uploadedBy: (req.user as any).id,
-        clientId: (req.user as any).role === "client" ? (req.user as any).clientId : null,
-        projectId: req.body.projectId || null,
+        uploadedBy: user.id,
+        clientId: clientId,
+        projectId: req.body.projectId ? parseInt(req.body.projectId) : null,
       }).returning();
+
+      // Move the file to a permanent location
+      const permanentPath = path.join('uploads', newDoc.name);
+      fs.renameSync(req.file.path, permanentPath);
 
       res.json(newDoc);
     } catch (error) {
