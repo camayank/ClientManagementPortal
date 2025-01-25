@@ -454,11 +454,12 @@ export function registerRoutes(app: Express): Server {
         }
       }
 
-      // Get the file path from metadata
+      // Get the file path from metadata or construct it
       const filePath = (doc.metadata as any)?.path || path.join('uploads', doc.id.toString() + '_' + doc.name);
 
       // Check if file exists
       if (!fs.existsSync(filePath)) {
+        console.error(`File not found at path: ${filePath}`);
         return res.status(404).send("File not found");
       }
 
@@ -472,6 +473,55 @@ export function registerRoutes(app: Express): Server {
     } catch (error) {
       console.error("View error:", error);
       res.status(500).send("Failed to view file");
+    }
+  });
+
+  // Add document download route with consistent path handling
+  app.get("/api/documents/:id/download", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).send("Unauthorized");
+    }
+
+    try {
+      const docId = parseInt(req.params.id);
+      const [doc] = await db.select()
+        .from(documents)
+        .where(eq(documents.id, docId));
+
+      if (!doc) {
+        return res.status(404).send("Document not found");
+      }
+
+      // Check if user has access to this document
+      if ((req.user as any).role !== 'admin') {
+        const [clientDoc] = await db.select()
+          .from(clients)
+          .where(eq(clients.userId, (req.user as any).id));
+
+        if (!clientDoc || doc.clientId !== clientDoc.id) {
+          return res.status(403).send("Access denied");
+        }
+      }
+
+      // Get the file path from metadata or construct it
+      const filePath = (doc.metadata as any)?.path || path.join('uploads', doc.id.toString() + '_' + doc.name);
+
+      // Check if file exists
+      if (!fs.existsSync(filePath)) {
+        console.error(`File not found at path: ${filePath}`);
+        return res.status(404).send("File not found");
+      }
+
+      // Set appropriate headers for download
+      res.setHeader('Content-Type', doc.type);
+      res.setHeader('Content-Disposition', `attachment; filename="${doc.name}"`);
+
+      // Stream the file
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+    } catch (error) {
+      console.error("Download error:", error);
+      res.status(500).send("Failed to download file");
     }
   });
 
@@ -558,7 +608,7 @@ export function registerRoutes(app: Express): Server {
 
       // Set appropriate headers
       res.setHeader('Content-Type', doc.type);
-      res.setHeader('Content-Disposition', `inline; filename="${doc.name}"`);
+      res.setHeader('Content-Disposition', `attachment; filename="${doc.name}"`);
 
       // Stream the file
       const fileStream = fs.createReadStream(filePath);
