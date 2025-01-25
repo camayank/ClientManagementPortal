@@ -17,6 +17,9 @@ import { Label } from "@/components/ui/label";
 import { useForm } from "react-hook-form";
 import { useToast } from "@/hooks/use-toast";
 import type { Project } from "@db/schema";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ChevronRight } from "lucide-react";
 
 type NewProjectForm = {
   name: string;
@@ -63,10 +66,13 @@ export default function ClientProjects() {
     <ClientLayout>
       <div className="space-y-6">
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Your Projects</h1>
+          <div>
+            <h1 className="text-3xl font-bold">Your Projects</h1>
+            <p className="text-muted-foreground">List of Your Projects</p>
+          </div>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button>Add New Project +</Button>
+              <Button className="bg-blue-600">Add New Project</Button>
             </DialogTrigger>
             <DialogContent>
               <form onSubmit={form.handleSubmit(onSubmit)}>
@@ -108,15 +114,25 @@ export default function ClientProjects() {
             {projects?.map((project) => (
               <Card key={project.id} className="overflow-hidden">
                 <CardContent className="p-6">
-                  <div className="space-y-2">
-                    <h3 className="text-lg font-semibold">{project.name}</h3>
-                    <div className="text-sm text-muted-foreground">
-                      <div>Created On: {new Date(project.createdAt).toLocaleDateString()}</div>
-                      <div>Last Date: {new Date(project.lastDate).toLocaleDateString()}</div>
-                      <div>Assigned to: {project.assignedUser?.username || 'Unassigned'}</div>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <h3 className="text-xl font-semibold">{project.name}</h3>
+                      <Badge variant={project.status === 'active' ? 'default' : 'secondary'}>
+                        {project.status}
+                      </Badge>
                     </div>
-                    <Button variant="secondary" className="w-full">
-                      View Details →
+                    <div className="space-y-1 text-sm text-muted-foreground">
+                      <div>Created On: {new Date(project.createdAt || '').toLocaleDateString()}</div>
+                      <div>Last Date: {new Date(project.lastDate).toLocaleDateString()}</div>
+                      <div>Assigned to: {project.assignedTo || 'Unassigned'}</div>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      className="w-full flex items-center justify-between"
+                      onClick={() => window.location.href = `/client/projects/${project.id}`}
+                    >
+                      View Details
+                      <ChevronRight className="h-4 w-4" />
                     </Button>
                   </div>
                 </CardContent>
