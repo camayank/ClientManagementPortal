@@ -6,6 +6,15 @@ import createMemoryStore from "memorystore";
 import { users, roles, userRoles } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
+import { hash as bcryptHash, compare as bcryptCompare } from "bcrypt";
+import { z } from "zod";
+
+// Create schema for user input validation
+const userInputSchema = z.object({
+  username: z.string().min(3),
+  password: z.string().min(6),
+  role: z.enum(["admin", "client"]).default("client"),
+});
 
 declare global {
   namespace Express {
@@ -18,6 +27,8 @@ declare global {
     }
   }
 }
+
+const SALT_ROUNDS = 10;
 
 export function setupAuth(app: Express) {
   const MemoryStore = createMemoryStore(session);
@@ -55,8 +66,8 @@ export function setupAuth(app: Express) {
           return done(null, false, { message: "Incorrect username." });
         }
 
-        // Simple password check for now
-        if (user.password !== password) {
+        const isValidPassword = await bcryptCompare(password, user.password);
+        if (!isValidPassword) {
           return done(null, false, { message: "Incorrect password." });
         }
 
@@ -73,6 +84,11 @@ export function setupAuth(app: Express) {
           ...user,
           roles: userRolesData.map(r => r.roleName),
         };
+
+        // Update last login timestamp
+        await db.update(users)
+          .set({ lastLogin: new Date() })
+          .where(eq(users.id, user.id));
 
         return done(null, userWithRoles);
       } catch (err) {
@@ -117,7 +133,78 @@ export function setupAuth(app: Express) {
     }
   });
 
+  app.post("/api/register", async (req, res, next) => {
+    try {
+      const validatedInput = userInputSchema.safeParse(req.body);
+      if (!validatedInput.success) {
+        return res
+          .status(400)
+          .send("Invalid input: " + validatedInput.error.issues.map(i => i.message).join(", "));
+      }
+
+      const { username, password, role } = validatedInput.data;
+
+      // Prevent admin registration through public endpoint
+      if (role === 'admin') {
+        return res.status(403).send("Admin accounts can only be created by existing administrators");
+      }
+
+      // Check if user already exists
+      const [existingUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
+
+      if (existingUser) {
+        return res.status(400).send("Username already exists");
+      }
+
+      // Hash the password
+      const hashedPassword = await bcryptHash(password, SALT_ROUNDS);
+
+      // Create the new user
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          username,
+          password: hashedPassword,
+          role: 'client', // Force client role for public registration
+        })
+        .returning();
+
+      // Create client record for the new user
+      if (role === 'client') {
+        await db.insert(userRoles)
+          .values({
+            userId: newUser.id,
+            roleId: 2, // Client role ID
+          });
+      }
+
+      // Log the user in after registration
+      req.login(newUser, (err) => {
+        if (err) {
+          return next(err);
+        }
+        return res.json({
+          message: "Registration successful",
+          user: { id: newUser.id, username: newUser.username },
+        });
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post("/api/login", (req, res, next) => {
+    const validatedInput = userInputSchema.safeParse(req.body);
+    if (!validatedInput.success) {
+      return res
+        .status(400)
+        .send("Invalid input: " + validatedInput.error.issues.map(i => i.message).join(", "));
+    }
+
     passport.authenticate("local", (err: any, user: Express.User | false, info: any) => {
       if (err) {
         return next(err);
