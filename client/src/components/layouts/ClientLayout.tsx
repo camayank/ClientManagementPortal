@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/hooks/use-user";
 import { Link } from "wouter";
-import { LayoutDashboard, LogOut, FileText, User } from "lucide-react";
+import { LayoutDashboard, LogOut, FileText, User, FolderKanban } from "lucide-react";
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const { logout } = useUser();
@@ -24,6 +24,12 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
               <Button variant="ghost" className="w-full justify-start">
                 <User className="mr-2 h-4 w-4" />
                 Personal Info
+              </Button>
+            </Link>
+            <Link href="/client/projects">
+              <Button variant="ghost" className="w-full justify-start">
+                <FolderKanban className="mr-2 h-4 w-4" />
+                Projects
               </Button>
             </Link>
             <Link href="/client/documents">
