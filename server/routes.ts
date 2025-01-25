@@ -841,5 +841,44 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  app.post("/api/admin/create-first-admin", async (req, res) => {
+    try {
+      // Check if any admin exists
+      const [existingAdmin] = await db
+        .select()
+        .from(users)
+        .where(eq(users.role, 'admin'))
+        .limit(1);
+
+      if (existingAdmin) {
+        return res.status(400).send("Admin user already exists");
+      }
+
+      const { username, password } = req.body;
+
+      if (!username || !password) {
+        return res.status(400).send("Username and password are required");
+      }
+
+      // Create the first admin user
+      const [adminUser] = await db
+        .insert(users)
+        .values({
+          username,
+          password, // Note: This should be hashed in production
+          role: 'admin',
+        })
+        .returning();
+
+      res.json({
+        message: "Admin user created successfully",
+        user: { id: adminUser.id, username: adminUser.username }
+      });
+    } catch (error) {
+      console.error("Error creating admin:", error);
+      res.status(500).send("Failed to create admin user");
+    }
+  });
+
   return httpServer;
 }

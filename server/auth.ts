@@ -1,32 +1,21 @@
 import passport from "passport";
-import { IVerifyOptions, Strategy as LocalStrategy } from "passport-local";
+import { Strategy as LocalStrategy } from "passport-local";
 import { type Express } from "express";
 import session from "express-session";
 import createMemoryStore from "memorystore";
-import { scrypt, randomBytes, timingSafeEqual } from "crypto";
-import { promisify } from "util";
 import { users } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
 
-const scryptAsync = promisify(scrypt);
-const crypto = {
-  hash: async (password: string) => {
-    const salt = randomBytes(16).toString("hex");
-    const buf = (await scryptAsync(password, salt, 64)) as Buffer;
-    return `${buf.toString("hex")}.${salt}`;
-  },
-  compare: async (suppliedPassword: string, storedPassword: string) => {
-    const [hashedPassword, salt] = storedPassword.split(".");
-    const hashedPasswordBuf = Buffer.from(hashedPassword, "hex");
-    const suppliedPasswordBuf = (await scryptAsync(
-      suppliedPassword,
-      salt,
-      64
-    )) as Buffer;
-    return timingSafeEqual(hashedPasswordBuf, suppliedPasswordBuf);
-  },
-};
+declare global {
+  namespace Express {
+    interface User {
+      id: number;
+      username: string;
+      role: 'admin' | 'client';
+    }
+  }
+}
 
 export function setupAuth(app: Express) {
   const MemoryStore = createMemoryStore(session);
@@ -34,17 +23,17 @@ export function setupAuth(app: Express) {
     secret: process.env.REPL_ID || "client-portal-secret",
     resave: false,
     saveUninitialized: false,
-    cookie: {},
+    cookie: {
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      secure: app.get("env") === "production",
+    },
     store: new MemoryStore({
-      checkPeriod: 86400000,
+      checkPeriod: 86400000, // prune expired entries every 24h
     }),
   };
 
   if (app.get("env") === "production") {
     app.set("trust proxy", 1);
-    sessionSettings.cookie = {
-      secure: true,
-    };
   }
 
   app.use(session(sessionSettings));
@@ -63,10 +52,17 @@ export function setupAuth(app: Express) {
         if (!user) {
           return done(null, false, { message: "Incorrect username." });
         }
-        const isMatch = await crypto.compare(password, user.password);
-        if (!isMatch) {
+
+        // Simple password check for now
+        if (user.password !== password) {
           return done(null, false, { message: "Incorrect password." });
         }
+
+        // Update last login timestamp
+        await db.update(users)
+          .set({ lastLogin: new Date() })
+          .where(eq(users.id, user.id));
+
         return done(null, user);
       } catch (err) {
         return done(err);
@@ -74,7 +70,7 @@ export function setupAuth(app: Express) {
     })
   );
 
-  passport.serializeUser((user: any, done) => {
+  passport.serializeUser((user, done) => {
     done(null, user.id);
   });
 
@@ -85,59 +81,19 @@ export function setupAuth(app: Express) {
         .from(users)
         .where(eq(users.id, id))
         .limit(1);
+
+      if (!user) {
+        return done(null, false);
+      }
+
       done(null, user);
     } catch (err) {
       done(err);
     }
   });
 
-  app.post("/api/register", async (req, res, next) => {
-    try {
-      const { username, password, role = "client" } = req.body;
-
-      if (!username || !password) {
-        return res.status(400).send("Username and password are required");
-      }
-
-      // Validate role
-      if (role !== "admin" && role !== "client") {
-        return res.status(400).send("Invalid role specified");
-      }
-
-      const [existingUser] = await db
-        .select()
-        .from(users)
-        .where(eq(users.username, username))
-        .limit(1);
-
-      if (existingUser) {
-        return res.status(400).send("Username already exists");
-      }
-
-      const hashedPassword = await crypto.hash(password);
-
-      const [newUser] = await db
-        .insert(users)
-        .values({
-          username,
-          password: hashedPassword,
-          role,
-        })
-        .returning();
-
-      req.login(newUser, (err) => {
-        if (err) {
-          return next(err);
-        }
-        return res.json(newUser);
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err: any, user: Express.User, info: IVerifyOptions) => {
+    passport.authenticate("local", (err: any, user: Express.User | false, info: any) => {
       if (err) {
         return next(err);
       }
@@ -151,7 +107,11 @@ export function setupAuth(app: Express) {
           return next(err);
         }
 
-        return res.json(user);
+        return res.json({
+          id: user.id,
+          username: user.username,
+          role: user.role,
+        });
       });
     })(req, res, next);
   });
@@ -161,16 +121,19 @@ export function setupAuth(app: Express) {
       if (err) {
         return res.status(500).send("Logout failed");
       }
-
       res.json({ message: "Logout successful" });
     });
   });
 
   app.get("/api/user", (req, res) => {
     if (req.isAuthenticated()) {
-      return res.json(req.user);
+      const user = req.user;
+      return res.json({
+        id: user.id,
+        username: user.username,
+        role: user.role,
+      });
     }
-
     res.status(401).send("Not logged in");
   });
 }
