@@ -272,16 +272,7 @@ export function registerRoutes(app: Express): Server {
 
     try {
       const user = req.user as any;
-      let query = db.select({
-        id: documents.id,
-        name: documents.name,
-        type: documents.type,
-        size: documents.size,
-        createdAt: documents.createdAt,
-        clientId: documents.clientId,
-        projectId: documents.projectId,
-        uploadedBy: documents.uploadedBy,
-      }).from(documents);
+      let query = db.select().from(documents);
 
       if (user.role === 'client') {
         // Get client's ID first
@@ -373,10 +364,10 @@ export function registerRoutes(app: Express): Server {
 
       // Update the document with the final path
       await db.update(documents)
-        .set({ 
-          metadata: { 
+        .set({
+          metadata: {
             path: permanentPath,
-            originalName: req.file.originalname 
+            originalName: req.file.originalname
           }
         })
         .where(eq(documents.id, newDoc.id));
