@@ -2,8 +2,13 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { apiLimiter, authLimiter, uploadLimiter } from "./middleware/rate-limit";
+import { corsMiddleware } from "./middleware/cors";
 
 const app = express();
+
+// Apply CORS middleware first
+app.use(corsMiddleware);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -13,6 +18,7 @@ app.use("/api/register", authLimiter);
 app.use("/api/documents/upload", uploadLimiter);
 app.use("/api", apiLimiter);
 
+// Request logging middleware
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -57,10 +63,16 @@ app.use((req, res, next) => {
       console.error(err.stack);
     }
 
+    // Send error response
     res.status(status).json({ 
       message,
       // Only include error details in development
-      ...(app.get("env") === "development" && { stack: err.stack })
+      ...(app.get("env") === "development" && { stack: err.stack }),
+      // Include CORS error details if applicable
+      ...(err.message === "Not allowed by CORS" && {
+        type: "CORS",
+        allowedOrigins: process.env.NODE_ENV === "development" ? ["*"] : ["example.com"] // Replace with your actual whitelist
+      })
     });
   });
 
