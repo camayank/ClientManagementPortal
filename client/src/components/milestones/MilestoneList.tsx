@@ -70,24 +70,24 @@ export function MilestoneList({ projectId }: Props) {
           </TableHeader>
           <TableBody>
             {milestones?.map((milestone) => {
-              const StatusIcon = milestone.status === 'completed' ? CheckCircle : priorityIcons[milestone.priority];
+              const StatusIcon = milestone.status === 'completed' ? CheckCircle : priorityIcons[milestone.priority || 'medium'];
               return (
                 <TableRow key={milestone.id}>
                   <TableCell className="font-medium">{milestone.title}</TableCell>
                   <TableCell>
-                    <Badge className={statusColors[milestone.status]}>
-                      {milestone.status.replace('_', ' ')}
+                    <Badge className={statusColors[milestone.status || 'pending']}>
+                      {(milestone.status || 'pending').replace('_', ' ')}
                     </Badge>
                   </TableCell>
                   <TableCell>
                     <div className="w-[100px]">
-                      <Progress value={milestone.progress} />
+                      <Progress value={milestone.progress || 0} />
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <StatusIcon className="h-4 w-4" />
-                      <span className="capitalize">{milestone.priority}</span>
+                      <span className="capitalize">{milestone.priority || 'medium'}</span>
                     </div>
                   </TableCell>
                   <TableCell>{format(new Date(milestone.dueDate), 'MMM d, yyyy')}</TableCell>

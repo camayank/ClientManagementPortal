@@ -20,11 +20,11 @@ import { MilestoneCreate } from "@/components/milestones/MilestoneCreate";
 import { MilestoneList } from "@/components/milestones/MilestoneList";
 
 export default function ProjectDetails() {
-  const { id } = useParams();
+  const params = useParams<{ id: string }>();
   const [isCreatingMilestone, setIsCreatingMilestone] = useState(false);
 
   const { data: project, isLoading } = useQuery<Project>({
-    queryKey: [`/api/projects/${id}`],
+    queryKey: [`/api/projects/${params.id}`],
   });
 
   if (isLoading) {
@@ -35,7 +35,7 @@ export default function ProjectDetails() {
     );
   }
 
-  if (!project) {
+  if (!project || !params.id) {
     return <div>Project not found</div>;
   }
 
@@ -104,13 +104,13 @@ export default function ProjectDetails() {
 
               <TabsContent value="milestones">
                 <div className="space-y-4">
-                  <MilestoneList projectId={parseInt(id)} />
+                  <MilestoneList projectId={parseInt(params.id)} />
                 </div>
               </TabsContent>
 
               <TabsContent value="documents">
                 <div className="space-y-6">
-                  <DocumentUpload projectId={parseInt(id)} />
+                  <DocumentUpload projectId={parseInt(params.id)} />
                   <DocumentList />
                 </div>
               </TabsContent>
@@ -131,7 +131,7 @@ export default function ProjectDetails() {
             <DialogTitle>Create New Milestone</DialogTitle>
           </DialogHeader>
           <MilestoneCreate 
-            projectId={parseInt(id)} 
+            projectId={parseInt(params.id)} 
             onClose={() => setIsCreatingMilestone(false)} 
           />
         </DialogContent>
