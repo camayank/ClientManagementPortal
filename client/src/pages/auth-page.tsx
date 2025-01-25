@@ -100,7 +100,7 @@ export default function AuthPage() {
                     <FormControl>
                       <Input 
                         type="email" 
-                        placeholder={showAdminLogin ? "admin@gmail.com" : "Enter your email"} 
+                        placeholder="Enter your email" 
                         {...field} 
                       />
                     </FormControl>
@@ -117,7 +117,7 @@ export default function AuthPage() {
                     <FormControl>
                       <Input 
                         type="password" 
-                        placeholder={showAdminLogin ? "admin@123" : "Enter your password"} 
+                        placeholder="Enter your password" 
                         {...field} 
                       />
                     </FormControl>
