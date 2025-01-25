@@ -59,6 +59,31 @@ export const projects = pgTable("projects", {
   clientId: integer("client_id").references(() => clients.id),
   assignedTo: integer("assigned_to").references(() => users.id),
   status: text("status", { enum: ["active", "completed", "pending"] }).default("active"),
+  businessType: text("business_type", {
+    enum: [
+      "bookkeeping",
+      "tax_return_preparation",
+      "audit_assurance",
+      "payroll_services",
+      "financial_planning",
+      "business_advisory",
+      "irs_representation",
+      "other"
+    ]
+  }).notNull(),
+  clientType: text("client_type", {
+    enum: [
+      "individual",
+      "small_business",
+      "corporation",
+      "non_profit",
+      "partnership",
+      "trust_estate"
+    ]
+  }).notNull(),
+  priority: text("priority", { enum: ["low", "medium", "high"] }).default("medium"),
+  estimatedHours: integer("estimated_hours"),
+  budget: integer("budget"),
   createdAt: timestamp("created_at").defaultNow(),
   lastDate: timestamp("last_date").notNull(),
   description: text("description"),

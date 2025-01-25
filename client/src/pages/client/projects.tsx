@@ -33,6 +33,31 @@ import { zodResolver } from "@hookform/resolvers/zod";
 const projectSchema = z.object({
   name: z.string().min(1, "Project name is required"),
   description: z.string().optional(),
+  businessType: z.enum([
+    "bookkeeping",
+    "tax_return_preparation",
+    "audit_assurance",
+    "payroll_services",
+    "financial_planning",
+    "business_advisory",
+    "irs_representation",
+    "other"
+  ], {
+    required_error: "Business type is required",
+  }),
+  clientType: z.enum([
+    "individual",
+    "small_business",
+    "corporation",
+    "non_profit",
+    "partnership",
+    "trust_estate"
+  ], {
+    required_error: "Client type is required",
+  }),
+  priority: z.enum(["low", "medium", "high"]).default("medium"),
+  estimatedHours: z.string().transform(val => parseInt(val) || 0).optional(),
+  budget: z.string().transform(val => parseInt(val) || 0).optional(),
   lastDate: z.string().min(1, "End date is required"),
   initialMilestone: z.object({
     title: z.string().min(1, "Milestone title is required"),
@@ -54,6 +79,11 @@ export default function ClientProjects() {
     defaultValues: {
       name: "",
       description: "",
+      businessType: "bookkeeping",
+      clientType: "individual",
+      priority: "medium",
+      estimatedHours: "",
+      budget: "",
       lastDate: "",
       initialMilestone: {
         title: "",
@@ -122,7 +152,7 @@ export default function ClientProjects() {
                 <DialogHeader>
                   <DialogTitle>Create New Project</DialogTitle>
                   <DialogDescription>
-                    Add a new project with initial milestone to track your progress.
+                    Add a new project with business details and initial milestone.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-6 py-4">
@@ -138,6 +168,90 @@ export default function ClientProjects() {
                         <p className="text-sm text-red-500">{form.formState.errors.name.message}</p>
                       )}
                     </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="businessType">Business Type</Label>
+                      <Select 
+                        onValueChange={(value) => form.setValue("businessType", value as any)}
+                        defaultValue={form.getValues("businessType")}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select business type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="bookkeeping">Bookkeeping</SelectItem>
+                          <SelectItem value="tax_return_preparation">Tax Return Preparation</SelectItem>
+                          <SelectItem value="audit_assurance">Audit & Assurance</SelectItem>
+                          <SelectItem value="payroll_services">Payroll Services</SelectItem>
+                          <SelectItem value="financial_planning">Financial Planning</SelectItem>
+                          <SelectItem value="business_advisory">Business Advisory</SelectItem>
+                          <SelectItem value="irs_representation">IRS Representation</SelectItem>
+                          <SelectItem value="other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {form.formState.errors.businessType && (
+                        <p className="text-sm text-red-500">{form.formState.errors.businessType.message}</p>
+                      )}
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="clientType">Client Type</Label>
+                      <Select 
+                        onValueChange={(value) => form.setValue("clientType", value as any)}
+                        defaultValue={form.getValues("clientType")}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select client type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="individual">Individual</SelectItem>
+                          <SelectItem value="small_business">Small Business</SelectItem>
+                          <SelectItem value="corporation">Corporation</SelectItem>
+                          <SelectItem value="non_profit">Non-Profit</SelectItem>
+                          <SelectItem value="partnership">Partnership</SelectItem>
+                          <SelectItem value="trust_estate">Trust/Estate</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {form.formState.errors.clientType && (
+                        <p className="text-sm text-red-500">{form.formState.errors.clientType.message}</p>
+                      )}
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="priority">Priority</Label>
+                      <Select 
+                        onValueChange={(value) => form.setValue("priority", value as any)}
+                        defaultValue={form.getValues("priority")}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select priority" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low">Low</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="high">High</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="estimatedHours">Estimated Hours</Label>
+                      <Input 
+                        id="estimatedHours"
+                        type="number"
+                        {...form.register("estimatedHours")}
+                      />
+                    </div>
+
+                    <div className="grid gap-2">
+                      <Label htmlFor="budget">Budget ($)</Label>
+                      <Input 
+                        id="budget"
+                        type="number"
+                        {...form.register("budget")}
+                      />
+                    </div>
+
                     <div className="grid gap-2">
                       <Label htmlFor="description">Description</Label>
                       <Textarea 
@@ -146,6 +260,7 @@ export default function ClientProjects() {
                         placeholder="Describe the project..."
                       />
                     </div>
+
                     <div className="grid gap-2">
                       <Label htmlFor="lastDate">Project End Date</Label>
                       <Input 

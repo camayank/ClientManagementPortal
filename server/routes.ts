@@ -255,7 +255,17 @@ export function registerRoutes(app: Express): Server {
   });
 
   app.post("/api/projects", requirePermission('projects', 'create'), async (req, res) => {
-    const { name, description, lastDate, initialMilestone } = req.body;
+    const { 
+      name, 
+      description, 
+      lastDate, 
+      initialMilestone,
+      businessType,
+      clientType,
+      priority,
+      estimatedHours,
+      budget
+    } = req.body;
     const user = req.user as any;
 
     try {
@@ -275,6 +285,11 @@ export function registerRoutes(app: Express): Server {
             description,
             clientId: clientRecord.id,
             lastDate: new Date(lastDate),
+            businessType,
+            clientType,
+            priority,
+            estimatedHours,
+            budget,
             status: 'active'
           })
           .returning();
@@ -323,6 +338,11 @@ export function registerRoutes(app: Express): Server {
             description,
             clientId,
             lastDate: new Date(lastDate),
+            businessType,
+            clientType,
+            priority,
+            estimatedHours,
+            budget,
             status: 'active'
           })
           .returning();
