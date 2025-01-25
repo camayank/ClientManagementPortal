@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/hooks/use-user";
 import { Link } from "wouter";
-import { LayoutDashboard, LogOut } from "lucide-react";
+import { LayoutDashboard, LogOut, FileText } from "lucide-react";
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const { logout } = useUser();
@@ -18,6 +18,12 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
               <Button variant="ghost" className="w-full justify-start">
                 <LayoutDashboard className="mr-2 h-4 w-4" />
                 Dashboard
+              </Button>
+            </Link>
+            <Link href="/client/documents">
+              <Button variant="ghost" className="w-full justify-start">
+                <FileText className="mr-2 h-4 w-4" />
+                Documents
               </Button>
             </Link>
             <Button 

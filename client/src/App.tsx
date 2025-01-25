@@ -9,6 +9,8 @@ import AuthPage from "@/pages/auth-page";
 import AdminDashboard from "@/pages/admin/dashboard";
 import ClientDashboard from "@/pages/client/dashboard";
 import AdminClients from "@/pages/admin/clients";
+import AdminDocuments from "@/pages/admin/documents";
+import ClientDocuments from "@/pages/client/documents";
 
 function Router() {
   const { user, isLoading, isAdmin } = useUser();
@@ -31,9 +33,13 @@ function Router() {
         <>
           <Route path="/admin" component={AdminDashboard} />
           <Route path="/admin/clients" component={AdminClients} />
+          <Route path="/admin/documents" component={AdminDocuments} />
         </>
       ) : (
-        <Route path="/client" component={ClientDashboard} />
+        <>
+          <Route path="/client" component={ClientDashboard} />
+          <Route path="/client/documents" component={ClientDocuments} />
+        </>
       )}
       <Route path="/">
         {isAdmin ? (
