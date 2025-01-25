@@ -37,7 +37,7 @@ export function DocumentList() {
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const { toast } = useToast();
 
-  const { data: documents, isLoading } = useQuery<Document[]>({
+  const { data: documents, isLoading, error } = useQuery<Document[]>({
     queryKey: ['/api/documents'],
   });
 
@@ -75,7 +75,19 @@ export function DocumentList() {
   };
 
   if (isLoading) {
-    return <div>Loading documents...</div>;
+    return (
+      <div className="flex justify-center p-8">
+        <span className="loading">Loading...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-red-500 p-4">
+        Error loading documents: {error.message}
+      </div>
+    );
   }
 
   return (
