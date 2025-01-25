@@ -5,7 +5,9 @@ import { db } from "@db";
 import { clients, documents, projects, users } from "@db/schema";
 import multer from "multer";
 import { eq, and, sql } from "drizzle-orm";
-import crypto from 'crypto'; // Import crypto library
+import crypto from 'crypto';
+import path from 'path';
+import fs from 'fs';
 
 const upload = multer({
   dest: 'uploads/',
@@ -359,7 +361,102 @@ export function registerRoutes(app: Express): Server {
   });
 
 
-  //NEW ROUTE FROM EDITED SNIPPET
+  // Add document download route
+  app.get("/api/documents/:id/download", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).send("Unauthorized");
+    }
+
+    try {
+      const docId = parseInt(req.params.id);
+      const [doc] = await db.select()
+        .from(documents)
+        .where(eq(documents.id, docId));
+
+      if (!doc) {
+        return res.status(404).send("Document not found");
+      }
+
+      // Check if user has access to this document
+      if ((req.user as any).role !== 'admin') {
+        const [clientDoc] = await db.select()
+          .from(clients)
+          .where(eq(clients.userId, (req.user as any).id));
+
+        if (!clientDoc || doc.clientId !== clientDoc.id) {
+          return res.status(403).send("Access denied");
+        }
+      }
+
+      // Find the file in uploads directory
+      const filePath = path.join('uploads', doc.name);
+
+      // Check if file exists
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).send("File not found");
+      }
+
+      // Set appropriate headers
+      res.setHeader('Content-Type', doc.type);
+      res.setHeader('Content-Disposition', `inline; filename="${doc.name}"`);
+
+      // Stream the file
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+    } catch (error) {
+      console.error("Download error:", error);
+      res.status(500).send("Failed to download file");
+    }
+  });
+
+  // Add document view/preview route
+  app.get("/api/documents/:id/view", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).send("Unauthorized");
+    }
+
+    try {
+      const docId = parseInt(req.params.id);
+      const [doc] = await db.select()
+        .from(documents)
+        .where(eq(documents.id, docId));
+
+      if (!doc) {
+        return res.status(404).send("Document not found");
+      }
+
+      // Check if user has access to this document
+      if ((req.user as any).role !== 'admin') {
+        const [clientDoc] = await db.select()
+          .from(clients)
+          .where(eq(clients.userId, (req.user as any).id));
+
+        if (!clientDoc || doc.clientId !== clientDoc.id) {
+          return res.status(403).send("Access denied");
+        }
+      }
+
+      // Find the file in uploads directory
+      const filePath = path.join('uploads', doc.name);
+
+      // Check if file exists
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).send("File not found");
+      }
+
+      // Set appropriate headers for viewing
+      res.setHeader('Content-Type', doc.type);
+      res.setHeader('Content-Disposition', `inline; filename="${doc.name}"`);
+
+      // Stream the file
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+    } catch (error) {
+      console.error("View error:", error);
+      res.status(500).send("Failed to view file");
+    }
+  });
+
   app.post("/api/register", async (req, res, next) => {
     try {
       const result = insertUserSchema.safeParse(req.body);
@@ -414,7 +511,6 @@ export function registerRoutes(app: Express): Server {
       next(error);
     }
   });
-
 
   const httpServer = createServer(app);
   return httpServer;
