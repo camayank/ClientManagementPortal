@@ -31,6 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ClipboardList,
   UserPlus,
@@ -335,103 +336,105 @@ export default function ClientOnboarding() {
                 New Client
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-3xl">
+            <DialogContent className="max-w-3xl max-h-[90vh]">
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col h-full">
                   <DialogHeader>
                     <DialogTitle>Add New Client</DialogTitle>
                     <DialogDescription>
                       Start the onboarding process for a new client
                     </DialogDescription>
                   </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <FormField
-                      control={form.control}
-                      name="company"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Company Name</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Enter company name" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="email"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Email</FormLabel>
-                          <FormControl>
-                            <Input type="email" placeholder="company@example.com" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="contactPerson"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Contact Person</FormLabel>
-                          <FormControl>
-                            <Input placeholder="Full name" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="phone"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Phone</FormLabel>
-                          <FormControl>
-                            <Input type="tel" placeholder="Phone number" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <div className="space-y-4">
-                      <h4 className="font-medium">Select Service Package</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {servicePackages?.map((pkg) => (
-                          <div
-                            key={pkg.id}
-                            className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                              selectedPackage === pkg.id
-                                ? "border-primary bg-primary/5"
-                                : "hover:border-primary/50"
-                            }`}
-                            onClick={() => setSelectedPackage(pkg.id)}
-                          >
-                            <div className="flex items-center gap-2 mb-2">
-                              <PackageIcon className="h-4 w-4" />
-                              <h3 className="font-medium">{pkg.name}</h3>
+                  <ScrollArea className="flex-grow px-1">
+                    <div className="space-y-4 py-4">
+                      <FormField
+                        control={form.control}
+                        name="company"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Company Name</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Enter company name" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="email"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Email</FormLabel>
+                            <FormControl>
+                              <Input type="email" placeholder="company@example.com" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="contactPerson"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Contact Person</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Full name" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="phone"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Phone</FormLabel>
+                            <FormControl>
+                              <Input type="tel" placeholder="Phone number" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <div className="space-y-4">
+                        <h4 className="font-medium">Select Service Package</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {servicePackages?.map((pkg) => (
+                            <div
+                              key={pkg.id}
+                              className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                                selectedPackage === pkg.id
+                                  ? "border-primary bg-primary/5"
+                                  : "hover:border-primary/50"
+                              }`}
+                              onClick={() => setSelectedPackage(pkg.id)}
+                            >
+                              <div className="flex items-center gap-2 mb-2">
+                                <PackageIcon className="h-4 w-4" />
+                                <h3 className="font-medium">{pkg.name}</h3>
+                              </div>
+                              <p className="text-sm text-muted-foreground mb-2">
+                                {pkg.description}
+                              </p>
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-medium">
+                                  ${pkg.basePrice}/
+                                  {pkg.billingCycle}
+                                </span>
+                                {selectedPackage === pkg.id && (
+                                  <span className="text-primary">Selected</span>
+                                )}
+                              </div>
                             </div>
-                            <p className="text-sm text-muted-foreground mb-2">
-                              {pkg.description}
-                            </p>
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm font-medium">
-                                ${pkg.basePrice}/
-                                {pkg.billingCycle}
-                              </span>
-                              {selectedPackage === pkg.id && (
-                                <span className="text-primary">Selected</span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <DialogFooter>
+                  </ScrollArea>
+                  <DialogFooter className="mt-6">
                     <Button variant="outline" type="button" onClick={() => setShowNewClient(false)}>
                       Cancel
                     </Button>
@@ -658,46 +661,48 @@ export default function ClientOnboarding() {
         </div>
 
         <Dialog open={showRequirements} onOpenChange={setShowRequirements}>
-          <DialogContent className="max-w-3xl">
+          <DialogContent className="max-w-3xl max-h-[90vh]">
             <DialogHeader>
               <DialogTitle>Step Requirements</DialogTitle>
               <DialogDescription>
                 Complete these requirements before moving to the next step
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
-              {selectedClient && (
-                <>
-                  <h3 className="text-lg font-semibold">
-                    {STEP_LABELS[selectedClient.currentStep]}
-                  </h3>
-                  <div className="space-y-2">
-                    {STEP_REQUIREMENTS[selectedClient.currentStep].map((req, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center gap-2 p-2 border rounded-lg"
-                      >
-                        <input
-                          type="checkbox"
-                          className="form-checkbox h-4 w-4"
-                        />
-                        <span>{req}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium mb-2">
-                      Additional Notes
-                    </label>
-                    <Textarea
-                      placeholder="Add notes about the current status..."
-                      defaultValue={selectedClient?.notes || ""}
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-            <DialogFooter>
+            <ScrollArea className="flex-grow px-1">
+              <div className="space-y-4 py-4">
+                {selectedClient && (
+                  <>
+                    <h3 className="text-lg font-semibold">
+                      {STEP_LABELS[selectedClient.currentStep]}
+                    </h3>
+                    <div className="space-y-2">
+                      {STEP_REQUIREMENTS[selectedClient.currentStep].map((req, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center gap-2 p-2 border rounded-lg"
+                        >
+                          <input
+                            type="checkbox"
+                            className="form-checkbox h-4 w-4"
+                          />
+                          <span>{req}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium mb-2">
+                        Additional Notes
+                      </label>
+                      <Textarea
+                        placeholder="Add notes about the current status..."
+                        defaultValue={selectedClient?.notes || ""}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </ScrollArea>
+            <DialogFooter className="mt-6">
               <Button
                 type="submit"
                 onClick={() =>
@@ -716,58 +721,60 @@ export default function ClientOnboarding() {
         </Dialog>
 
         <Dialog open={showDocuments} onOpenChange={setShowDocuments}>
-          <DialogContent className="max-w-3xl">
+          <DialogContent className="max-w-3xl max-h-[90vh]">
             <DialogHeader>
               <DialogTitle>Client Documents</DialogTitle>
               <DialogDescription>
                 Manage required documents for client onboarding
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
-              {REQUIRED_DOCUMENTS.map((docType) => {
-                const doc = documents?.find((d) => d.documentType === docType);
-                return (
-                  <div
-                    key={docType}
-                    className="flex items-center justify-between p-3 border rounded-lg"
-                  >
-                    <div>
-                      <h4 className="font-medium">{docType}</h4>
-                      <p className="text-sm text-muted-foreground">
-                        {doc ? "Uploaded" : "Pending"}
-                      </p>
-                    </div>
-                    <div>
-                      {doc ? (
-                        <Button variant="outline" size="sm">
-                          <FileText className="w-4 h-4 mr-2" />
-                          View
-                        </Button>
-                      ) : (
-                        <label>
-                          <input
-                            type="file"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file && selectedClient) {
-                                uploadDocument(selectedClient.id, file, docType);
-                              }
-                            }}
-                          />
-                          <Button variant="outline" size="sm" asChild>
-                            <span>
-                              <Upload className="w-4 h-4 mr-2" />
-                              Upload
-                            </span>
+            <ScrollArea className="flex-grow px-1">
+              <div className="space-y-4 py-4">
+                {REQUIRED_DOCUMENTS.map((docType) => {
+                  const doc = documents?.find((d) => d.documentType === docType);
+                  return (
+                    <div
+                      key={docType}
+                      className="flex items-center justify-between p-3 border rounded-lg"
+                    >
+                      <div>
+                        <h4 className="font-medium">{docType}</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {doc ? "Uploaded" : "Pending"}
+                        </p>
+                      </div>
+                      <div>
+                        {doc ? (
+                          <Button variant="outline" size="sm">
+                            <FileText className="w-4 h-4 mr-2" />
+                            View
                           </Button>
-                        </label>
-                      )}
+                        ) : (
+                          <label>
+                            <input
+                              type="file"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file && selectedClient) {
+                                  uploadDocument(selectedClient.id, file, docType);
+                                }
+                              }}
+                            />
+                            <Button variant="outline" size="sm" asChild>
+                              <span>
+                                <Upload className="w-4 h-4 mr-2" />
+                                Upload
+                              </span>
+                            </Button>
+                          </label>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
           </DialogContent>
         </Dialog>
       </div>
