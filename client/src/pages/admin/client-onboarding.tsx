@@ -51,11 +51,14 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Package as PackageIcon } from "lucide-react";
+import type { ServicePackage } from "@db/schema";
 
 const ONBOARDING_STEPS = [
   "initial_contact",
   "needs_assessment",
   "proposal_sent",
+  "package_selection",
   "contract_review",
   "document_collection",
   "service_setup",
@@ -67,6 +70,7 @@ const STEP_LABELS: Record<typeof ONBOARDING_STEPS[number], string> = {
   initial_contact: "Initial Contact",
   needs_assessment: "Needs Assessment",
   proposal_sent: "Proposal Sent",
+  package_selection: "Package Selection",
   contract_review: "Contract Review",
   document_collection: "Document Collection",
   service_setup: "Service Setup",
@@ -91,6 +95,12 @@ const STEP_REQUIREMENTS: Record<typeof ONBOARDING_STEPS[number], string[]> = {
     "Include pricing details",
     "Define service scope",
     "Set timeline expectations",
+  ],
+  package_selection: [
+    "Review available service packages",
+    "Select appropriate package tier",
+    "Discuss customization needs",
+    "Confirm billing frequency",
   ],
   contract_review: [
     "Send service agreement",
@@ -148,7 +158,8 @@ export default function ClientOnboarding() {
   const [showDocuments, setShowDocuments] = useState(false);
   const [showNewClient, setShowNewClient] = useState(false);
   const { toast } = useToast();
-  const queryClient = new QueryClient(); // Added QueryClient
+  const queryClient = new QueryClient();
+  const [selectedPackage, setSelectedPackage] = useState<number | null>(null);
 
   const form = useForm<NewClientFormData>({
     resolver: zodResolver(newClientSchema),
@@ -168,6 +179,12 @@ export default function ClientOnboarding() {
     queryKey: ["/api/admin/client-onboarding/documents", selectedClient?.id],
     enabled: !!selectedClient,
   });
+
+  const { data: servicePackages } = useQuery<ServicePackage[]>({
+    queryKey: ["/api/admin/service-packages"],
+    enabled: showNewClient || selectedClient?.currentStep === "package_selection",
+  });
+
 
   const updateOnboardingStatus = async (clientId: number, newStep: string, notes?: string) => {
     try {
@@ -233,7 +250,10 @@ export default function ClientOnboarding() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          ...data,
+          packageId: selectedPackage,
+        }),
         credentials: "include",
       });
 
@@ -243,7 +263,6 @@ export default function ClientOnboarding() {
 
       const newClient = await response.json();
 
-      // Optimistically update the query cache
       queryClient.setQueryData<ClientOnboarding[]>(
         ["/api/admin/client-onboarding"],
         (old) => [...(old || []), newClient]
@@ -256,8 +275,8 @@ export default function ClientOnboarding() {
 
       form.reset();
       setShowNewClient(false);
+      setSelectedPackage(null);
 
-      // Force a refetch to ensure data consistency
       await queryClient.invalidateQueries({ queryKey: ["/api/admin/client-onboarding"] });
     } catch (error: any) {
       toast({
@@ -316,7 +335,7 @@ export default function ClientOnboarding() {
                 New Client
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-3xl">
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)}>
                   <DialogHeader>
@@ -378,12 +397,45 @@ export default function ClientOnboarding() {
                         </FormItem>
                       )}
                     />
+                    <div className="space-y-4">
+                      <h4 className="font-medium">Select Service Package</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {servicePackages?.map((pkg) => (
+                          <div
+                            key={pkg.id}
+                            className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                              selectedPackage === pkg.id
+                                ? "border-primary bg-primary/5"
+                                : "hover:border-primary/50"
+                            }`}
+                            onClick={() => setSelectedPackage(pkg.id)}
+                          >
+                            <div className="flex items-center gap-2 mb-2">
+                              <PackageIcon className="h-4 w-4" />
+                              <h3 className="font-medium">{pkg.name}</h3>
+                            </div>
+                            <p className="text-sm text-muted-foreground mb-2">
+                              {pkg.description}
+                            </p>
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm font-medium">
+                                ${pkg.basePrice}/
+                                {pkg.billingCycle}
+                              </span>
+                              {selectedPackage === pkg.id && (
+                                <span className="text-primary">Selected</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                   <DialogFooter>
                     <Button variant="outline" type="button" onClick={() => setShowNewClient(false)}>
                       Cancel
                     </Button>
-                    <Button type="submit" disabled={form.formState.isSubmitting}>
+                    <Button type="submit" disabled={form.formState.isSubmitting || !selectedPackage}>
                       {form.formState.isSubmitting ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
