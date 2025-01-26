@@ -9,6 +9,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { useState } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { RoleCapabilitiesView } from "./role-capabilities";
 
 const roleSchema = z.object({
   name: z.string().min(1, "Role name is required"),
@@ -77,6 +80,7 @@ export default function RoleDialog({ open, onOpenChange, role }: RoleDialogProps
         description: `Role ${role ? 'updated' : 'created'} successfully`,
       });
       reset();
+      setSelectedPermissions([]);
     },
     onError: (error) => {
       toast({
@@ -88,86 +92,104 @@ export default function RoleDialog({ open, onOpenChange, role }: RoleDialogProps
   });
 
   const onSubmit = (data: RoleFormData) => {
-    mutation.mutate({...data, permissions: selectedPermissions})
+    mutation.mutate(data);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[800px] max-h-[90vh]">
         <DialogHeader>
-          <DialogTitle>Create New Role</DialogTitle>
+          <DialogTitle>{role ? 'Edit Role' : 'Create New Role'}</DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="name">Role Name</Label>
-              <Input
-                id="name"
-                className="mt-1.5"
-                {...register("name")}
-              />
-              {errors.name && (
-                <p className="text-sm text-destructive mt-1">{errors.name.message}</p>
-              )}
-            </div>
+        <Tabs defaultValue="create" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="create">Create Role</TabsTrigger>
+            <TabsTrigger value="reference">Role Reference</TabsTrigger>
+          </TabsList>
 
-            <div>
-              <Label htmlFor="description">Description</Label>
-              <Input
-                id="description"
-                className="mt-1.5"
-                {...register("description")}
-              />
-              {errors.description && (
-                <p className="text-sm text-destructive mt-1">{errors.description.message}</p>
-              )}
-            </div>
+          <TabsContent value="create" className="mt-4">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="name">Role Name</Label>
+                  <Input
+                    id="name"
+                    className="mt-1.5"
+                    {...register("name")}
+                  />
+                  {errors.name && (
+                    <p className="text-sm text-destructive mt-1">{errors.name.message}</p>
+                  )}
+                </div>
 
-            <div>
-              <Label>Permissions</Label>
-              <div className="grid grid-cols-2 gap-4 mt-2 border rounded-lg p-4">
-                {AVAILABLE_PERMISSIONS.map((permission) => (
-                  <div key={permission.id} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={permission.id}
-                      checked={selectedPermissions.includes(permission.id)}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setSelectedPermissions([...selectedPermissions, permission.id]);
-                        } else {
-                          setSelectedPermissions(selectedPermissions.filter((p) => p !== permission.id));
-                        }
-                      }}
-                    />
-                    <label
-                      htmlFor={permission.id}
-                      className="text-sm text-muted-foreground"
-                    >
-                      {permission.label}
-                    </label>
-                  </div>
-                ))}
+                <div>
+                  <Label htmlFor="description">Description</Label>
+                  <Input
+                    id="description"
+                    className="mt-1.5"
+                    {...register("description")}
+                  />
+                  {errors.description && (
+                    <p className="text-sm text-destructive mt-1">{errors.description.message}</p>
+                  )}
+                </div>
+
+                <div>
+                  <Label>Permissions</Label>
+                  <ScrollArea className="h-[200px] mt-2 border rounded-lg p-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      {AVAILABLE_PERMISSIONS.map((permission) => (
+                        <div key={permission.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={permission.id}
+                            checked={selectedPermissions.includes(permission.id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setSelectedPermissions([...selectedPermissions, permission.id]);
+                              } else {
+                                setSelectedPermissions(selectedPermissions.filter((p) => p !== permission.id));
+                              }
+                            }}
+                          />
+                          <label
+                            htmlFor={permission.id}
+                            className="text-sm text-muted-foreground"
+                          >
+                            {permission.label}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </div>
               </div>
-            </div>
-          </div>
 
-          <div className="flex justify-end gap-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                reset();
-                onOpenChange(false);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? "Creating..." : "Create Role"}
-            </Button>
-          </div>
-        </form>
+              <div className="flex justify-end gap-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    reset();
+                    setSelectedPermissions([]);
+                    onOpenChange(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={mutation.isPending}>
+                  {mutation.isPending ? "Creating..." : role ? "Update Role" : "Create Role"}
+                </Button>
+              </div>
+            </form>
+          </TabsContent>
+
+          <TabsContent value="reference" className="mt-4">
+            <ScrollArea className="h-[500px]">
+              <RoleCapabilitiesView />
+            </ScrollArea>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );
