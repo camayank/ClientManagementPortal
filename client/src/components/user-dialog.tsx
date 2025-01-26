@@ -22,21 +22,24 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
+// Define available roles
+const AVAILABLE_ROLES = {
+  admin: "Administrator",
+  client: "Client",
+  manager: "Manager",
+  partner: "Partner",
+  team_lead: "Team Lead",
+  staff_accountant: "Staff Accountant",
+  quality_reviewer: "Quality Reviewer",
+  compliance_officer: "Compliance Officer"
+} as const;
+
 const userSchema = z.object({
   username: z.string().email("Must be a valid email address"),
   password: z.string().min(8, "Password must be at least 8 characters"),
   fullName: z.string().min(1, "Full name is required"),
   email: z.string().email("Must be a valid email address"),
-  role: z.enum([
-    "admin",
-    "client",
-    "manager",
-    "partner",
-    "team_lead",
-    "staff_accountant",
-    "quality_reviewer",
-    "compliance_officer"
-  ], {
+  role: z.enum(Object.keys(AVAILABLE_ROLES) as (keyof typeof AVAILABLE_ROLES)[], {
     required_error: "Role is required",
   }),
 });
@@ -178,14 +181,11 @@ export default function UserDialog({ open, onOpenChange }: UserDialogProps) {
                   <SelectValue placeholder="Select a role" />
                 </SelectTrigger>
                 <SelectContent className="w-full">
-                  <SelectItem value="admin">Administrator</SelectItem>
-                  <SelectItem value="client">Client</SelectItem>
-                  <SelectItem value="manager">Manager</SelectItem>
-                  <SelectItem value="partner">Partner</SelectItem>
-                  <SelectItem value="team_lead">Team Lead</SelectItem>
-                  <SelectItem value="staff_accountant">Staff Accountant</SelectItem>
-                  <SelectItem value="quality_reviewer">Quality Reviewer</SelectItem>
-                  <SelectItem value="compliance_officer">Compliance Officer</SelectItem>
+                  {Object.entries(AVAILABLE_ROLES).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               {form.formState.errors.role && (
