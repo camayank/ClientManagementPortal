@@ -46,6 +46,7 @@ import type {
 } from "@db/schema";
 import { FeatureTierDialog } from "@/components/feature-tier-dialog";
 import { PricingRuleDialog } from "@/components/pricing-rule-dialog";
+import { FeatureManagementDialog } from "@/components/feature-management-dialog";
 
 // Helper functions for package comparison
 function getAllFeatures(packages: ServicePackage[] | undefined): string[] {
@@ -76,6 +77,8 @@ export default function ServicePackages() {
   const [isNewPricingRuleDialogOpen, setIsNewPricingRuleDialogOpen] = useState(false);
   const [selectedPricingRule, setSelectedPricingRule] = useState<CustomPricingRule | null>(null);
   const { toast } = useToast();
+  const [isFeatureManagementDialogOpen, setIsFeatureManagementDialogOpen] = useState(false);
+  const [selectedFeature, setSelectedFeature] = useState<ServiceFeature | null>(null);
 
 
   const { data: packages, isLoading: packagesLoading } = useQuery<ServicePackage[]>({
@@ -315,56 +318,117 @@ export default function ServicePackages() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle>Feature Tiers & Capabilities</CardTitle>
-                <Button onClick={() => setIsFeatureTierDialogOpen(true)}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  New Tier
-                </Button>
+                <div className="flex gap-2">
+                  <Button onClick={() => {
+                    setSelectedFeature(null);
+                    setIsFeatureManagementDialogOpen(true);
+                  }}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    New Feature
+                  </Button>
+                  <Button onClick={() => setIsFeatureTierDialogOpen(true)}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    New Tier
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {tiersLoading ? (
-                    <div className="flex justify-center py-8">
-                      <span className="loading loading-spinner"></span>
-                    </div>
-                  ) : (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Name</TableHead>
-                          <TableHead>Description</TableHead>
-                          <TableHead>Level</TableHead>
-                          <TableHead>Features</TableHead>
-                          <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {featureTiers?.map((tier) => (
-                          <TableRow key={tier.id}>
-                            <TableCell className="font-medium">{tier.name}</TableCell>
-                            <TableCell>{tier.description}</TableCell>
-                            <TableCell>{tier.level}</TableCell>
-                            <TableCell>
-                              {features
-                                ?.filter((f) => f.tierId === tier.id)
-                                .map((f) => f.name)
-                                .join(", ")}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                variant="outline"
-                                onClick={() => {
-                                  setSelectedTier(tier);
-                                  setIsFeatureTierDialogOpen(true);
-                                }}
-                              >
-                                Edit
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  )}
+                  <Tabs defaultValue="tiers">
+                    <TabsList>
+                      <TabsTrigger value="tiers">Tiers</TabsTrigger>
+                      <TabsTrigger value="features">Features</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="tiers">
+                      {tiersLoading ? (
+                        <div className="flex justify-center py-8">
+                          <span className="loading loading-spinner"></span>
+                        </div>
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Name</TableHead>
+                              <TableHead>Description</TableHead>
+                              <TableHead>Level</TableHead>
+                              <TableHead>Features</TableHead>
+                              <TableHead className="text-right">Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {featureTiers?.map((tier) => (
+                              <TableRow key={tier.id}>
+                                <TableCell className="font-medium">{tier.name}</TableCell>
+                                <TableCell>{tier.description}</TableCell>
+                                <TableCell>{tier.level}</TableCell>
+                                <TableCell>
+                                  {features
+                                    ?.filter((f) => f.tierId === tier.id)
+                                    .map((f) => f.name)
+                                    .join(", ")}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                      setSelectedTier(tier);
+                                      setIsFeatureTierDialogOpen(true);
+                                    }}
+                                  >
+                                    Edit
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </TabsContent>
+
+                    <TabsContent value="features">
+                      {featuresLoading ? (
+                        <div className="flex justify-center py-8">
+                          <span className="loading loading-spinner"></span>
+                        </div>
+                      ) : (
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Name</TableHead>
+                              <TableHead>Description</TableHead>
+                              <TableHead>Type</TableHead>
+                              <TableHead>Tier</TableHead>
+                              <TableHead className="text-right">Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {features?.map((feature) => (
+                              <TableRow key={feature.id}>
+                                <TableCell className="font-medium">{feature.name}</TableCell>
+                                <TableCell>{feature.description}</TableCell>
+                                <TableCell>{feature.type}</TableCell>
+                                <TableCell>
+                                  {featureTiers?.find(t => t.id === feature.tierId)?.name || 'Unassigned'}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                      setSelectedFeature(feature);
+                                      setIsFeatureManagementDialogOpen(true);
+                                    }}
+                                  >
+                                    Edit
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </TabsContent>
+                  </Tabs>
                 </div>
               </CardContent>
             </Card>
@@ -378,6 +442,18 @@ export default function ServicePackages() {
                 }
               }}
               selectedTier={selectedTier}
+            />
+
+            <FeatureManagementDialog
+              open={isFeatureManagementDialogOpen}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setIsFeatureManagementDialogOpen(false);
+                  setSelectedFeature(null);
+                }
+              }}
+              selectedFeature={selectedFeature}
+              tiers={featureTiers}
             />
           </TabsContent>
 
