@@ -39,9 +39,13 @@ import {
   Paperclip,
   MessageSquare,
   Package,
+  Upload,
+  FileText,
 } from "lucide-react";
-import type { ClientOnboarding } from "@db/schema";
+import type { ClientOnboarding, ClientOnboardingDocument } from "@db/schema";
+import { Progress } from "@/components/ui/progress";
 
+// Onboarding steps definition remains the same...
 const ONBOARDING_STEPS = [
   "initial_contact",
   "needs_assessment",
@@ -64,6 +68,7 @@ const STEP_LABELS: Record<typeof ONBOARDING_STEPS[number], string> = {
   completed: "Completed",
 };
 
+// Requirements definition remains the same...
 const STEP_REQUIREMENTS: Record<typeof ONBOARDING_STEPS[number], string[]> = {
   initial_contact: [
     "Schedule initial meeting",
@@ -114,13 +119,28 @@ const STEP_REQUIREMENTS: Record<typeof ONBOARDING_STEPS[number], string[]> = {
   ],
 };
 
+const REQUIRED_DOCUMENTS = [
+  "Business Registration",
+  "Tax ID Documentation",
+  "Financial Statements",
+  "Bank Statements",
+  "Service Agreement",
+  "Client Information Form",
+];
+
 export default function ClientOnboarding() {
   const [selectedClient, setSelectedClient] = useState<ClientOnboarding | null>(null);
   const [showRequirements, setShowRequirements] = useState(false);
+  const [showDocuments, setShowDocuments] = useState(false);
   const { toast } = useToast();
 
-  const { data: onboardingClients, isLoading } = useQuery<ClientOnboarding[]>({
+  const { data: onboardingClients, isLoading, refetch } = useQuery<ClientOnboarding[]>({
     queryKey: ["/api/admin/client-onboarding"],
+  });
+
+  const { data: documents } = useQuery<ClientOnboardingDocument[]>({
+    queryKey: ["/api/admin/client-onboarding/documents", selectedClient?.id],
+    enabled: !!selectedClient,
   });
 
   const updateOnboardingStatus = async (clientId: number, newStep: string, notes?: string) => {
@@ -140,6 +160,37 @@ export default function ClientOnboarding() {
         title: "Success",
         description: "Onboarding status updated successfully",
       });
+      refetch();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message,
+      });
+    }
+  };
+
+  const uploadDocument = async (clientId: number, file: File, documentType: string) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("documentType", documentType);
+
+    try {
+      const response = await fetch(`/api/admin/client-onboarding/${clientId}/documents`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      toast({
+        title: "Success",
+        description: "Document uploaded successfully",
+      });
+      refetch();
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -175,6 +226,11 @@ export default function ClientOnboarding() {
     }
   };
 
+  const calculateProgress = (client: ClientOnboarding) => {
+    const stepIndex = ONBOARDING_STEPS.indexOf(client.currentStep);
+    return ((stepIndex + 1) / ONBOARDING_STEPS.length) * 100;
+  };
+
   return (
     <AdminLayout>
       <div className="container mx-auto py-10">
@@ -204,6 +260,7 @@ export default function ClientOnboarding() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Client</TableHead>
+                    <TableHead>Progress</TableHead>
                     <TableHead>Current Step</TableHead>
                     <TableHead>Documents</TableHead>
                     <TableHead>Communication</TableHead>
@@ -220,6 +277,9 @@ export default function ClientOnboarding() {
                         {client.client?.company}
                       </TableCell>
                       <TableCell>
+                        <Progress value={calculateProgress(client)} className="w-[60px]" />
+                      </TableCell>
+                      <TableCell>
                         {getStepBadge(client.currentStep)}
                       </TableCell>
                       <TableCell>
@@ -227,6 +287,10 @@ export default function ClientOnboarding() {
                           variant="ghost"
                           size="sm"
                           className="flex items-center gap-1"
+                          onClick={() => {
+                            setSelectedClient(client);
+                            setShowDocuments(true);
+                          }}
                         >
                           <Paperclip className="w-4 h-4" />
                           View
@@ -296,6 +360,7 @@ export default function ClientOnboarding() {
         </Card>
       </div>
 
+      {/* Requirements Dialog */}
       <Dialog
         open={showRequirements}
         onOpenChange={() => {
@@ -357,6 +422,69 @@ export default function ClientOnboarding() {
               Update Progress
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Documents Dialog */}
+      <Dialog
+        open={showDocuments}
+        onOpenChange={() => {
+          setShowDocuments(false);
+          setSelectedClient(null);
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Client Documents</DialogTitle>
+            <DialogDescription>
+              Manage required documents for client onboarding
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {REQUIRED_DOCUMENTS.map((docType) => {
+              const doc = documents?.find((d) => d.documentType === docType);
+              return (
+                <div
+                  key={docType}
+                  className="flex items-center justify-between p-3 border rounded-lg"
+                >
+                  <div>
+                    <h4 className="font-medium">{docType}</h4>
+                    <p className="text-sm text-muted-foreground">
+                      {doc ? "Uploaded" : "Pending"}
+                    </p>
+                  </div>
+                  <div>
+                    {doc ? (
+                      <Button variant="outline" size="sm">
+                        <FileText className="w-4 h-4 mr-2" />
+                        View
+                      </Button>
+                    ) : (
+                      <label>
+                        <input
+                          type="file"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file && selectedClient) {
+                              uploadDocument(selectedClient.id, file, docType);
+                            }
+                          }}
+                        />
+                        <Button variant="outline" size="sm" asChild>
+                          <span>
+                            <Upload className="w-4 h-4 mr-2" />
+                            Upload
+                          </span>
+                        </Button>
+                      </label>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </DialogContent>
       </Dialog>
     </AdminLayout>
