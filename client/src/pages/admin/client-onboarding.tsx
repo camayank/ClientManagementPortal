@@ -31,7 +31,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import {
   ClipboardList,
   UserPlus,
@@ -243,16 +242,49 @@ export default function ClientOnboarding() {
               Manage and track client onboarding progress
             </p>
           </div>
-          <DialogTrigger asChild>
-            <Button onClick={() => setShowNewClient(true)}>
-              <UserPlus className="w-4 h-4 mr-2" />
-              New Client
-            </Button>
-          </DialogTrigger>
+          <Dialog open={showNewClient} onOpenChange={setShowNewClient}>
+            <DialogTrigger asChild>
+              <Button>
+                <UserPlus className="w-4 h-4 mr-2" />
+                New Client
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add New Client</DialogTitle>
+                <DialogDescription>
+                  Start the onboarding process for a new client
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium">Company Name</label>
+                  <Input placeholder="Enter company name" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Email</label>
+                  <Input type="email" placeholder="company@example.com" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Contact Person</label>
+                  <Input placeholder="Full name" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Phone</label>
+                  <Input type="tel" placeholder="Phone number" />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowNewClient(false)}>
+                  Cancel
+                </Button>
+                <Button>Start Onboarding</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
 
         <div className="grid gap-6">
-          {/* Quick Stats */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="pb-2">
@@ -309,7 +341,6 @@ export default function ClientOnboarding() {
             </Card>
           </div>
 
-          {/* Main Table */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -354,9 +385,7 @@ export default function ClientOnboarding() {
                             </span>
                           </div>
                         </TableCell>
-                        <TableCell>
-                          {getStepBadge(client.currentStep)}
-                        </TableCell>
+                        <TableCell>{getStepBadge(client.currentStep)}</TableCell>
                         <TableCell>
                           <Button
                             variant="ghost"
@@ -434,7 +463,6 @@ export default function ClientOnboarding() {
             </CardContent>
           </Card>
 
-          {/* Timeline View */}
           <Card>
             <CardHeader>
               <CardTitle>Onboarding Timeline</CardTitle>
@@ -459,14 +487,7 @@ export default function ClientOnboarding() {
           </Card>
         </div>
 
-        {/* Requirements Dialog */}
-        <Dialog
-          open={showRequirements}
-          onOpenChange={() => {
-            setShowRequirements(false);
-            setSelectedClient(null);
-          }}
-        >
+        <Dialog open={showRequirements} onOpenChange={setShowRequirements}>
           <DialogContent className="max-w-3xl">
             <DialogHeader>
               <DialogTitle>Step Requirements</DialogTitle>
@@ -524,14 +545,7 @@ export default function ClientOnboarding() {
           </DialogContent>
         </Dialog>
 
-        {/* Documents Dialog */}
-        <Dialog
-          open={showDocuments}
-          onOpenChange={() => {
-            setShowDocuments(false);
-            setSelectedClient(null);
-          }}
-        >
+        <Dialog open={showDocuments} onOpenChange={setShowDocuments}>
           <DialogContent className="max-w-3xl">
             <DialogHeader>
               <DialogTitle>Client Documents</DialogTitle>
@@ -584,45 +598,6 @@ export default function ClientOnboarding() {
                 );
               })}
             </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* New Client Dialog */}
-        <Dialog
-          open={showNewClient}
-          onOpenChange={setShowNewClient}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add New Client</DialogTitle>
-              <DialogDescription>
-                Start the onboarding process for a new client
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Company Name</label>
-                <Input placeholder="Enter company name" />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Email</label>
-                <Input type="email" placeholder="company@example.com" />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Contact Person</label>
-                <Input placeholder="Full name" />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Phone</label>
-                <Input type="tel" placeholder="Phone number" />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowNewClient(false)}>
-                Cancel
-              </Button>
-              <Button>Start Onboarding</Button>
-            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
