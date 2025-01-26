@@ -8,14 +8,25 @@ import { db } from "@db";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import { z } from "zod";
+import crypto from "crypto";
 
 const SALT_ROUNDS = 10;
+const RESET_TOKEN_EXPIRES = 60 * 60 * 1000; // 1 hour in milliseconds
 
 // Create schema for user input validation
 const userInputSchema = z.object({
   username: z.string().min(3),
   password: z.string().min(6),
   role: z.enum(["admin", "client"]).default("client"),
+});
+
+const passwordResetRequestSchema = z.object({
+  username: z.string().email()
+});
+
+const passwordResetSchema = z.object({
+  token: z.string(),
+  newPassword: z.string().min(6)
 });
 
 // Define a type that extends the base User type from schema
@@ -29,6 +40,9 @@ declare global {
   }
 }
 
+// Store reset tokens in memory (in production, use Redis or similar)
+const passwordResetTokens = new Map<string, { username: string, expires: number }>();
+
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, SALT_ROUNDS);
 }
@@ -40,6 +54,10 @@ export async function comparePassword(password: string, hash: string): Promise<b
     console.error('Error comparing passwords:', error);
     return false;
   }
+}
+
+function generateResetToken(): string {
+  return crypto.randomBytes(32).toString('hex');
 }
 
 export function setupAuth(app: Express) {
@@ -154,6 +172,76 @@ export function setupAuth(app: Express) {
     } catch (err) {
       console.error("Deserialize error:", err);
       done(err);
+    }
+  });
+
+  app.post("/api/request-password-reset", async (req, res) => {
+    try {
+      const result = passwordResetRequestSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).send("Invalid email address");
+      }
+
+      const { username } = result.data;
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
+
+      if (!user) {
+        // Don't reveal if user exists
+        return res.json({ message: "If an account exists with this email, you will receive a password reset link." });
+      }
+
+      const token = generateResetToken();
+      const expires = Date.now() + RESET_TOKEN_EXPIRES;
+
+      // Store token
+      passwordResetTokens.set(token, {
+        username: user.username,
+        expires,
+      });
+
+      // In production, send email with reset link
+      console.log(`Password reset token for ${username}: ${token}`);
+
+      res.json({ message: "If an account exists with this email, you will receive a password reset link." });
+    } catch (error) {
+      console.error("Password reset request error:", error);
+      res.status(500).send("Internal server error");
+    }
+  });
+
+  app.post("/api/reset-password", async (req, res) => {
+    try {
+      const result = passwordResetSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).send("Invalid input");
+      }
+
+      const { token, newPassword } = result.data;
+      const resetData = passwordResetTokens.get(token);
+
+      if (!resetData || resetData.expires < Date.now()) {
+        passwordResetTokens.delete(token);
+        return res.status(400).send("Invalid or expired reset token");
+      }
+
+      const hashedPassword = await hashPassword(newPassword);
+
+      // Update password in database
+      await db.update(users)
+        .set({ password: hashedPassword })
+        .where(eq(users.username, resetData.username));
+
+      // Remove used token
+      passwordResetTokens.delete(token);
+
+      res.json({ message: "Password successfully reset" });
+    } catch (error) {
+      console.error("Password reset error:", error);
+      res.status(500).send("Internal server error");
     }
   });
 
