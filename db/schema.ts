@@ -1,6 +1,80 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb, date, numeric, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
-import { relations, sql } from "drizzle-orm";
+import { relations } from "drizzle-orm";
+
+// Enhanced user authentication table
+export const users = pgTable("users", {
+  id: serial("id").primaryKey(),
+  email: text("email").unique().notNull(),
+  username: text("username").unique().notNull(),
+  password: text("password").notNull(),
+  role: text("role", {
+    enum: [
+      "admin",
+      "client",
+      "manager",
+      "partner",
+      "team_lead",
+      "staff_accountant",
+      "quality_reviewer",
+      "compliance_officer"
+    ]
+  }).default("client").notNull(),
+  fullName: text("full_name"),
+  isEmailVerified: boolean("is_email_verified").default(false),
+  verificationToken: text("verification_token"),
+  resetPasswordToken: text("reset_password_token"),
+  resetPasswordExpires: timestamp("reset_password_expires"),
+  mfaEnabled: boolean("mfa_enabled").default(false),
+  mfaSecret: text("mfa_secret"),
+  lastLogin: timestamp("last_login"),
+  lastFailedLogin: timestamp("last_failed_login"),
+  failedLoginAttempts: integer("failed_login_attempts").default(0),
+  status: text("status", { enum: ["active", "suspended", "locked"] }).default("active"),
+  refreshToken: text("refresh_token"),
+  refreshTokenExpires: timestamp("refresh_token_expires"),
+  socialLogins: jsonb("social_logins"), // Store Google, LinkedIn OAuth info
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// OAuth providers table
+export const oauthProviders = pgTable("oauth_providers", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  provider: text("provider", { enum: ["google", "linkedin"] }).notNull(),
+  providerId: text("provider_id").notNull(),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  tokenExpires: timestamp("token_expires"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Session management table for JWT
+export const sessions = pgTable("sessions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  token: text("token").notNull(),
+  refreshToken: text("refresh_token").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  lastActivity: timestamp("last_activity").defaultNow(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  isValid: boolean("is_valid").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// One-time password (OTP) table for MFA
+export const otpCodes = pgTable("otp_codes", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  code: text("code").notNull(),
+  type: text("type", { enum: ["mfa", "email_verification", "password_reset"] }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  isUsed: boolean("is_used").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
 
 // Roles and Permissions tables
 export const roles = pgTable("roles", {
@@ -31,28 +105,58 @@ export const userRoles = pgTable("user_roles", {
   roleId: integer("role_id").references(() => roles.id).notNull(),
 });
 
-// Existing tables
-export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  username: text("username").unique().notNull(),
-  password: text("password").notNull(),
-  role: text("role", {
-    enum: [
-      "admin",
-      "client",
-      "manager",
-      "partner",
-      "team_lead",
-      "staff_accountant",
-      "quality_reviewer",
-      "compliance_officer"
-    ]
-  }).default("client").notNull(),
-  fullName: text("full_name"),
-  email: text("email"),
-  lastLogin: timestamp("last_login"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
+// All table relations
+export const rolesRelations = relations(roles, ({ many }) => ({
+  permissions: many(rolePermissions),
+  users: many(userRoles),
+}));
+
+export const permissionsRelations = relations(permissions, ({ many }) => ({
+  roles: many(rolePermissions),
+}));
+
+export const usersRelations = relations(users, ({ many }) => ({
+  roles: many(userRoles),
+  oauthAccounts: many(oauthProviders),
+  sessions: many(sessions),
+  otpCodes: many(otpCodes),
+}));
+
+export const oauthProvidersRelations = relations(oauthProviders, ({ one }) => ({
+  user: one(users, {
+    fields: [oauthProviders.userId],
+    references: [users.id],
+  }),
+}));
+
+export const sessionsRelations = relations(sessions, ({ one }) => ({
+  user: one(users, {
+    fields: [sessions.userId],
+    references: [users.id],
+  }),
+}));
+
+export const otpCodesRelations = relations(otpCodes, ({ one }) => ({
+  user: one(users, {
+    fields: [otpCodes.userId],
+    references: [users.id],
+  }),
+}));
+
+// Schema validation
+export const insertUserSchema = createInsertSchema(users);
+export const selectUserSchema = createSelectSchema(users);
+export const insertOAuthProviderSchema = createInsertSchema(oauthProviders);
+export const selectOAuthProviderSchema = createSelectSchema(oauthProviders);
+export const insertSessionSchema = createInsertSchema(sessions);
+export const selectSessionSchema = createSelectSchema(sessions);
+export const insertOtpCodeSchema = createInsertSchema(otpCodes);
+export const selectOtpCodeSchema = createSelectSchema(otpCodes);
+export const insertRoleSchema = createInsertSchema(roles);
+export const selectRoleSchema = createSelectSchema(roles);
+export const insertPermissionSchema = createInsertSchema(permissions);
+export const selectPermissionSchema = createSelectSchema(permissions);
+
 
 export const clients = pgTable("clients", {
   id: serial("id").primaryKey(),
@@ -113,7 +217,6 @@ export const documents = pgTable("documents", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// New Milestone tables
 export const milestones = pgTable("milestones", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").references(() => projects.id).notNull(),
@@ -138,20 +241,19 @@ export const milestoneUpdates = pgTable("milestone_updates", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// New tables for client management
 export const servicePackages = pgTable("service_packages", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
   tierId: integer("tier_id").references(() => serviceFeatureTiers.id),
   features: jsonb("features"),
-  basePrice: numeric("base_price"),
+  basePrice: integer("base_price"),
   billingCycle: text("billing_cycle", { enum: ["monthly", "quarterly", "annual"] }).notNull(),
   isActive: boolean("is_active").default(true),
   sortOrder: integer("sort_order").default(0),
   upgradeToPackageId: integer("upgrade_to_package_id").references(() => servicePackages.id),
-  customizationRules: jsonb("customization_rules"), // Rules for price adjustments
-  comparisonData: jsonb("comparison_data"), // Metadata for package comparison
+  customizationRules: jsonb("customization_rules"),
+  comparisonData: jsonb("comparison_data"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at"),
 });
@@ -202,8 +304,8 @@ export const clientServices = pgTable("client_services", {
   id: serial("id").primaryKey(),
   clientId: integer("client_id").references(() => clients.id).notNull(),
   packageId: integer("package_id").references(() => servicePackages.id).notNull(),
-  startDate: date("start_date").notNull(),
-  endDate: date("end_date"),
+  startDate: integer("start_date").notNull(),
+  endDate: integer("end_date"),
   status: text("status", {
     enum: ["active", "pending", "suspended", "terminated"]
   }).default("pending"),
@@ -211,15 +313,14 @@ export const clientServices = pgTable("client_services", {
   billingFrequency: text("billing_frequency", {
     enum: ["monthly", "quarterly", "annual"]
   }).notNull(),
-  priceOverride: numeric("price_override"),
-  nextBillingDate: date("next_billing_date"),
-  appliedRules: jsonb("applied_rules"), // Array of applied pricing rules
-  customFeatures: jsonb("custom_features"), // Custom feature values
+  priceOverride: integer("price_override"),
+  nextBillingDate: integer("next_billing_date"),
+  appliedRules: jsonb("applied_rules"),
+  customFeatures: jsonb("custom_features"),
   autoRenew: boolean("auto_renew").default(true),
   renewalNotificationSent: boolean("renewal_notification_sent").default(false),
 });
 
-// Add new tables after the existing client onboarding table
 export const clientOnboardingDocuments = pgTable("client_onboarding_documents", {
   id: serial("id").primaryKey(),
   onboardingId: integer("onboarding_id").references(() => clientOnboarding.id).notNull(),
@@ -231,8 +332,6 @@ export const clientOnboardingDocuments = pgTable("client_onboarding_documents", 
   documentId: integer("document_id").references(() => documents.id),
 });
 
-
-// New tables for enhanced service package management
 export const serviceFeatureTiers = pgTable("service_feature_tiers", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -248,7 +347,7 @@ export const serviceFeatures = pgTable("service_features", {
   type: text("type", {
     enum: ["boolean", "numeric", "text"]
   }).notNull(),
-  unit: text("unit"), // For numeric features (e.g., "GB", "users", etc.)
+  unit: text("unit"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -256,11 +355,10 @@ export const serviceTierFeatures = pgTable("service_tier_features", {
   id: serial("id").primaryKey(),
   tierId: integer("tier_id").references(() => serviceFeatureTiers.id).notNull(),
   featureId: integer("feature_id").references(() => serviceFeatures.id).notNull(),
-  value: text("value").notNull(), // JSON string for different types of values
+  value: text("value").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Package change history
 export const packageChangeHistory = pgTable("package_change_history", {
   id: serial("id").primaryKey(),
   clientServiceId: integer("client_service_id").references(() => clientServices.id).notNull(),
@@ -272,20 +370,18 @@ export const packageChangeHistory = pgTable("package_change_history", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Custom pricing rules
 export const customPricingRules = pgTable("custom_pricing_rules", {
   id: serial("id").primaryKey(),
   packageId: integer("package_id").references(() => servicePackages.id).notNull(),
   name: text("name").notNull(),
   description: text("description"),
-  condition: jsonb("condition").notNull(), // JSON object defining when rule applies
-  adjustment: jsonb("adjustment").notNull(), // JSON object defining price adjustment
+  condition: jsonb("condition").notNull(),
+  adjustment: jsonb("adjustment").notNull(),
   priority: integer("priority").default(0),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Task Management System
 export const taskCategories = pgTable("task_categories", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -306,8 +402,8 @@ export const tasks = pgTable("tasks", {
     enum: ["backlog", "todo", "in_progress", "in_review", "blocked", "completed"]
   }).default("todo"),
   dueDate: timestamp("due_date"),
-  estimatedHours: numeric("estimated_hours"),
-  actualHours: numeric("actual_hours"),
+  estimatedHours: integer("estimated_hours"),
+  actualHours: integer("actual_hours"),
   projectId: integer("project_id").references(() => projects.id),
   parentTaskId: integer("parent_task_id").references(() => tasks.id),
   createdAt: timestamp("created_at").defaultNow(),
@@ -332,20 +428,8 @@ export const taskStatusHistory = pgTable("task_status_history", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+
 // Relations
-export const usersRelations = relations(users, ({ many }) => ({
-  roles: many(userRoles),
-}));
-
-export const rolesRelations = relations(roles, ({ many }) => ({
-  permissions: many(rolePermissions),
-  users: many(userRoles),
-}));
-
-export const permissionsRelations = relations(permissions, ({ many }) => ({
-  roles: many(rolePermissions),
-}));
-
 export const clientsRelations = relations(clients, ({ one, many }) => ({
   user: one(users, {
     fields: [clients.userId],
@@ -410,7 +494,6 @@ export const milestoneUpdatesRelations = relations(milestoneUpdates, ({ one }) =
   }),
 }));
 
-// New Project Template Table
 export const projectTemplates = pgTable("project_templates", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -444,7 +527,6 @@ export const projectTemplates = pgTable("project_templates", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Add relations
 export const projectTemplatesRelations = relations(projectTemplates, ({ many }) => ({
   projects: many(projects),
 }));
@@ -462,7 +544,6 @@ export const servicePackagesRelations = relations(servicePackages, ({ one, many 
   customRules: many(customPricingRules),
 }));
 
-// Update communications relation in clientOnboardingRelations
 export const clientOnboardingRelations = relations(clientOnboarding, ({ one, many }) => ({
   client: one(clients, {
     fields: [clientOnboarding.clientId],
@@ -505,7 +586,6 @@ export const clientServicesRelations = relations(clientServices, ({ one }) => ({
   }),
 }));
 
-// Add relations
 export const clientOnboardingDocumentsRelations = relations(clientOnboardingDocuments, ({ one }) => ({
   onboarding: one(clientOnboarding, {
     fields: [clientOnboardingDocuments.onboardingId],
@@ -537,19 +617,13 @@ export const serviceTierFeaturesRelations = relations(serviceTierFeatures, ({ on
   }),
 }));
 
-// Schema validation
-export const insertUserSchema = createInsertSchema(users);
-export const selectUserSchema = createSelectSchema(users);
+// Schema validation -  Existing code remains
 export const insertClientSchema = createInsertSchema(clients);
 export const selectClientSchema = createSelectSchema(clients);
 export const insertProjectSchema = createInsertSchema(projects);
 export const selectProjectSchema = createSelectSchema(projects);
 export const insertDocumentSchema = createInsertSchema(documents);
 export const selectDocumentSchema = createSelectSchema(documents);
-export const insertRoleSchema = createInsertSchema(roles);
-export const selectRoleSchema = createSelectSchema(roles);
-export const insertPermissionSchema = createInsertSchema(permissions);
-export const selectPermissionSchema = createSelectSchema(permissions);
 export const insertMilestoneSchema = createInsertSchema(milestones);
 export const selectMilestoneSchema = createSelectSchema(milestones);
 export const insertMilestoneUpdateSchema = createInsertSchema(milestoneUpdates);
@@ -562,15 +636,12 @@ export const insertClientOnboardingSchema = createInsertSchema(clientOnboarding)
 export const selectClientOnboardingSchema = createSelectSchema(clientOnboarding);
 export const insertClientEngagementSchema = createInsertSchema(clientEngagement);
 export const selectClientEngagementSchema = createSelectSchema(clientEngagement);
-
 export const insertClientCommunicationsSchema = createInsertSchema(clientCommunications);
 export const selectClientCommunicationsSchema = createSelectSchema(clientCommunications);
-
 export const insertClientServicesSchema = createInsertSchema(clientServices);
 export const selectClientServicesSchema = createSelectSchema(clientServices);
 export const insertClientOnboardingDocumentSchema = createInsertSchema(clientOnboardingDocuments);
 export const selectClientOnboardingDocumentSchema = createSelectSchema(clientOnboardingDocuments);
-
 export const insertServiceFeatureTierSchema = createInsertSchema(serviceFeatureTiers);
 export const selectServiceFeatureTierSchema = createSelectSchema(serviceFeatureTiers);
 export const insertServiceFeatureSchema = createInsertSchema(serviceFeatures);
@@ -582,30 +653,14 @@ export const selectCustomPricingRuleSchema = createSelectSchema(customPricingRul
 export const insertPackageChangeHistorySchema = createInsertSchema(packageChangeHistory);
 export const selectPackageChangeHistorySchema = createSelectSchema(packageChangeHistory);
 
-// Add schema validation for task tables
-export const insertTaskSchema = createInsertSchema(tasks);
-export const selectTaskSchema = createSelectSchema(tasks);
-export const insertTaskCategorySchema = createInsertSchema(taskCategories);
-export const selectTaskCategorySchema = createSelectSchema(taskCategories);
-export const insertTaskDependencySchema = createInsertSchema(taskDependencies);
-export const selectTaskDependencySchema = createSelectSchema(taskDependencies);
-export const insertTaskStatusHistorySchema = createInsertSchema(taskStatusHistory);
-export const selectTaskStatusHistorySchema = createSelectSchema(taskStatusHistory);
 
-
-// Types
-export type User = typeof users.$inferSelect;
-export type NewUser = typeof users.$inferInsert;
+// Types - Existing code remains
 export type Client = typeof clients.$inferSelect;
 export type NewClient = typeof clients.$inferInsert;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type Document = typeof documents.$inferSelect;
 export type NewDocument = typeof documents.$inferInsert;
-export type Role = typeof roles.$inferSelect;
-export type NewRole = typeof roles.$inferInsert;
-export type Permission = typeof permissions.$inferSelect;
-export type NewPermission = typeof permissions.$inferInsert;
 export type Milestone = typeof milestones.$inferSelect;
 export type NewMilestone = typeof milestones.$inferInsert;
 export type MilestoneUpdate = typeof milestoneUpdates.$inferSelect;
@@ -634,6 +689,11 @@ export type CustomPricingRule = typeof customPricingRules.$inferSelect;
 export type NewCustomPricingRule = typeof customPricingRules.$inferInsert;
 export type PackageChangeHistory = typeof packageChangeHistory.$inferSelect;
 export type NewPackageChangeHistory = typeof packageChangeHistory.$inferInsert;
+export type Role = typeof roles.$inferSelect;
+export type NewRole = typeof roles.$inferInsert;
+export type Permission = typeof permissions.$inferSelect;
+export type NewPermission = typeof permissions.$inferInsert;
+
 
 // Add types for task tables
 export type Task = typeof tasks.$inferSelect;
@@ -698,3 +758,13 @@ export const taskStatusHistoryRelations = relations(taskStatusHistory, ({ one })
     references: [users.id],
   }),
 }));
+
+// Add schema validation for task tables
+export const insertTaskSchema = createInsertSchema(tasks);
+export const selectTaskSchema = createSelectSchema(tasks);
+export const insertTaskCategorySchema = createInsertSchema(taskCategories);
+export const selectTaskCategorySchema = createSelectSchema(taskCategories);
+export const insertTaskDependencySchema = createInsertSchema(taskDependencies);
+export const selectTaskDependencySchema = createSelectSchema(taskDependencies);
+export const insertTaskStatusHistorySchema = createInsertSchema(taskStatusHistory);
+export const selectTaskStatusHistorySchema = createSelectSchema(taskStatusHistory);

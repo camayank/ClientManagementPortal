@@ -1,5 +1,8 @@
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
+import { Strategy as JwtStrategy, ExtractJwt } from "passport-jwt";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
+import { Strategy as LinkedInStrategy } from "passport-linkedin-oauth2";
 import { type Express } from "express";
 import session from "express-session";
 import createMemoryStore from "memorystore";
@@ -8,33 +11,36 @@ import { db } from "@db";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import { z } from "zod";
-import crypto from "crypto";
+import speakeasy from "speakeasy";
+import QRCode from "qrcode";
+import jwt from "jsonwebtoken";
 
 const SALT_ROUNDS = 10;
-const RESET_TOKEN_EXPIRES = 60 * 60 * 1000; // 1 hour in milliseconds
+const JWT_SECRET = process.env.JWT_SECRET || 'your-jwt-secret';
+const JWT_EXPIRY = '1h';
+const REFRESH_TOKEN_EXPIRY = '7d';
 
-// Create schema for user input validation
+// Validation schemas
 const userInputSchema = z.object({
-  username: z.string().min(3),
-  password: z.string().min(6),
-  role: z.enum(["admin", "client"]).default("client"),
+  username: z.string().email("Must be a valid email"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  role: z.enum(["admin", "client", "team_member", "partner"]).default("client"),
 });
 
-const passwordResetRequestSchema = z.object({
-  username: z.string().email()
+const mfaSetupSchema = z.object({
+  userId: z.number(),
+  token: z.string()
 });
 
-const passwordResetSchema = z.object({
-  token: z.string(),
-  newPassword: z.string().min(6)
+const mfaVerifySchema = z.object({
+  token: z.string()
 });
 
-// Define a type that extends the base User type from schema
+// Extended User type with MFA and roles
 type AuthUser = Omit<User, 'password'> & {
   roles?: string[];
-  id: number;
-  username: string;
-  role: string;
+  mfaEnabled?: boolean;
+  mfaSecret?: string;
 };
 
 declare global {
@@ -43,9 +49,7 @@ declare global {
   }
 }
 
-// Store reset tokens in memory (in production, use Redis or similar)
-const passwordResetTokens = new Map<string, { username: string, expires: number }>();
-
+// Helper functions
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, SALT_ROUNDS);
 }
@@ -59,8 +63,10 @@ export async function comparePassword(password: string, hash: string): Promise<b
   }
 }
 
-function generateResetToken(): string {
-  return crypto.randomBytes(32).toString('hex');
+function generateTokens(user: AuthUser) {
+  const accessToken = jwt.sign({ id: user.id, roles: user.roles }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
+  const refreshToken = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
+  return { accessToken, refreshToken };
 }
 
 export function setupAuth(app: Express) {
@@ -70,11 +76,11 @@ export function setupAuth(app: Express) {
     resave: false,
     saveUninitialized: false,
     cookie: {
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      maxAge: 24 * 60 * 60 * 1000,
       secure: app.get("env") === "production",
     },
     store: new MemoryStore({
-      checkPeriod: 86400000, // prune expired entries every 24h
+      checkPeriod: 86400000,
     }),
   };
 
@@ -86,60 +92,145 @@ export function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
-  passport.use(
-    new LocalStrategy(async (username, password, done) => {
+  // JWT Strategy
+  passport.use(new JwtStrategy({
+    jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+    secretOrKey: JWT_SECRET,
+  }, async (payload, done) => {
+    try {
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, payload.id))
+        .limit(1);
+
+      if (!user) {
+        return done(null, false);
+      }
+
+      return done(null, user);
+    } catch (error) {
+      return done(error, false);
+    }
+  }));
+
+  // Local Strategy
+  passport.use(new LocalStrategy(async (username, password, done) => {
+    try {
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
+
+      if (!user) {
+        return done(null, false, { message: "Incorrect username." });
+      }
+
+      const isValidPassword = await comparePassword(password, user.password);
+      if (!isValidPassword) {
+        return done(null, false, { message: "Incorrect password." });
+      }
+
+      // Get user roles
+      const userRolesData = await db
+        .select({
+          roleName: roles.name,
+        })
+        .from(userRoles)
+        .innerJoin(roles, eq(userRoles.roleId, roles.id))
+        .where(eq(userRoles.userId, user.id));
+
+      const userForSession: AuthUser = {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        roles: userRolesData.map(r => r.roleName),
+        mfaEnabled: user.mfaEnabled,
+      };
+
+      // Update last login timestamp
+      await db.update(users)
+        .set({ lastLogin: new Date() })
+        .where(eq(users.id, user.id));
+
+      return done(null, userForSession);
+    } catch (err) {
+      return done(err);
+    }
+  }));
+
+  // Social login strategies
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    passport.use(new GoogleStrategy({
+      clientID: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      callbackURL: "/auth/google/callback",
+    }, async (accessToken, refreshToken, profile, done) => {
       try {
-        console.log("Attempting login for username:", username);
-        const [user] = await db
+        let [user] = await db
           .select()
           .from(users)
-          .where(eq(users.username, username))
+          .where(eq(users.username, profile.emails![0].value))
           .limit(1);
 
         if (!user) {
-          console.log("User not found");
-          return done(null, false, { message: "Incorrect username." });
+          const [newUser] = await db.insert(users)
+            .values({
+              username: profile.emails![0].value,
+              password: await hashPassword(Math.random().toString(36)),
+              role: 'client',
+              fullName: profile.displayName,
+              email: profile.emails![0].value,
+              provider: 'google',
+              providerId: profile.id,
+            })
+            .returning();
+          user = newUser;
         }
 
-        console.log("Found user:", { id: user.id, username: user.username });
-
-        const isValidPassword = await comparePassword(password, user.password);
-        console.log("Password validation result:", isValidPassword);
-
-        if (!isValidPassword) {
-          return done(null, false, { message: "Incorrect password." });
-        }
-
-        // Get user roles
-        const userRolesData = await db
-          .select({
-            roleName: roles.name,
-          })
-          .from(userRoles)
-          .innerJoin(roles, eq(userRoles.roleId, roles.id))
-          .where(eq(userRoles.userId, user.id));
-
-        console.log("User roles:", userRolesData);
-
-        const userForSession: AuthUser = {
-          id: user.id,
-          username: user.username,
-          role: user.role,
-          roles: userRolesData.map(r => r.roleName),
-        };
-
-        // Update last login timestamp
-        await db.update(users)
-          .set({ lastLogin: new Date() })
-          .where(eq(users.id, user.id));
-
-        return done(null, userForSession);
-      } catch (err) {
-        console.error("Login error:", err);
-        return done(err);
+        return done(null, user);
+      } catch (error) {
+        return done(error);
       }
-    })
-  );
+    }));
+  }
+
+  if (process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET) {
+    passport.use(new LinkedInStrategy({
+      clientID: process.env.LINKEDIN_CLIENT_ID,
+      clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
+      callbackURL: "/auth/linkedin/callback",
+      scope: ['r_emailaddress', 'r_liteprofile'],
+    }, async (accessToken, refreshToken, profile, done) => {
+      try {
+        let [user] = await db
+          .select()
+          .from(users)
+          .where(eq(users.username, profile.emails![0].value))
+          .limit(1);
+
+        if (!user) {
+          const [newUser] = await db.insert(users)
+            .values({
+              username: profile.emails![0].value,
+              password: await hashPassword(Math.random().toString(36)),
+              role: 'client',
+              fullName: profile.displayName,
+              email: profile.emails![0].value,
+              provider: 'linkedin',
+              providerId: profile.id,
+            })
+            .returning();
+          user = newUser;
+        }
+
+        return done(null, user);
+      } catch (error) {
+        return done(error);
+      }
+    }));
+  }
 
   passport.serializeUser((user: Express.User, done) => {
     done(null, user.id);
@@ -157,7 +248,6 @@ export function setupAuth(app: Express) {
         return done(null, false);
       }
 
-      // Get user roles
       const userRolesData = await db
         .select({
           roleName: roles.name,
@@ -171,117 +261,154 @@ export function setupAuth(app: Express) {
         username: user.username,
         role: user.role,
         roles: userRolesData.map(r => r.roleName),
+        mfaEnabled: user.mfaEnabled,
       };
 
       done(null, userForSession);
     } catch (err) {
-      console.error("Deserialize error:", err);
       done(err);
     }
   });
 
-  app.post("/api/request-password-reset", async (req, res) => {
-    try {
-      const result = passwordResetRequestSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).send("Invalid email address");
-      }
+  // MFA Setup endpoint
+  app.post("/api/auth/mfa/setup", async (req, res) => {
+    if (!req.user) {
+      return res.status(401).send("Not authenticated");
+    }
 
-      const { username } = result.data;
+    const secret = speakeasy.generateSecret();
+    const otpAuthUrl = speakeasy.otpauthURL({
+      secret: secret.base32,
+      label: req.user.username,
+      issuer: 'YourApp'
+    });
+
+    try {
+      const qrCode = await QRCode.toDataURL(otpAuthUrl);
+
+      // Store the secret temporarily
+      await db.update(users)
+        .set({ 
+          mfaSecret: secret.base32,
+          mfaEnabled: false 
+        })
+        .where(eq(users.id, req.user.id));
+
+      res.json({ 
+        qrCode,
+        secret: secret.base32
+      });
+    } catch (error) {
+      console.error('MFA setup error:', error);
+      res.status(500).send("Failed to setup MFA");
+    }
+  });
+
+  // MFA Verify endpoint
+  app.post("/api/auth/mfa/verify", async (req, res) => {
+    if (!req.user) {
+      return res.status(401).send("Not authenticated");
+    }
+
+    const result = mfaVerifySchema.safeParse(req.body);
+    if (!result.success) {
+      return res.status(400).send(result.error.message);
+    }
+
+    const { token } = result.data;
+
+    try {
       const [user] = await db
         .select()
         .from(users)
-        .where(eq(users.username, username))
+        .where(eq(users.id, req.user.id))
         .limit(1);
 
-      if (!user) {
-        // Don't reveal if user exists
-        return res.json({ message: "If an account exists with this email, you will receive a password reset link." });
+      if (!user.mfaSecret) {
+        return res.status(400).send("MFA not set up");
       }
 
-      const token = generateResetToken();
-      const expires = Date.now() + RESET_TOKEN_EXPIRES;
-
-      // Store token
-      passwordResetTokens.set(token, {
-        username: user.username,
-        expires,
+      const verified = speakeasy.totp.verify({
+        secret: user.mfaSecret,
+        encoding: 'base32',
+        token
       });
 
-      // In production, send email with reset link
-      console.log(`Password reset token for ${username}: ${token}`);
+      if (verified) {
+        await db.update(users)
+          .set({ mfaEnabled: true })
+          .where(eq(users.id, req.user.id));
 
-      res.json({ message: "If an account exists with this email, you will receive a password reset link." });
+        res.json({ message: "MFA verified and enabled" });
+      } else {
+        res.status(400).send("Invalid token");
+      }
     } catch (error) {
-      console.error("Password reset request error:", error);
-      res.status(500).send("Internal server error");
+      console.error('MFA verification error:', error);
+      res.status(500).send("Failed to verify MFA");
     }
   });
 
-  app.post("/api/reset-password", async (req, res) => {
-    try {
-      const result = passwordResetSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).send("Invalid input");
-      }
-
-      const { token, newPassword } = result.data;
-      const resetData = passwordResetTokens.get(token);
-
-      if (!resetData || resetData.expires < Date.now()) {
-        passwordResetTokens.delete(token);
-        return res.status(400).send("Invalid or expired reset token");
-      }
-
-      const hashedPassword = await hashPassword(newPassword);
-
-      // Update password in database
-      await db.update(users)
-        .set({ password: hashedPassword })
-        .where(eq(users.username, resetData.username));
-
-      // Remove used token
-      passwordResetTokens.delete(token);
-
-      res.json({ message: "Password successfully reset" });
-    } catch (error) {
-      console.error("Password reset error:", error);
-      res.status(500).send("Internal server error");
-    }
-  });
-
-  app.post("/api/login", (req, res, next) => {
-    console.log("Login attempt:", req.body.username);
-    console.log("Request body:", { ...req.body, password: '[REDACTED]' });
-
-    passport.authenticate("local", (err: any, user: Express.User | false, info: any) => {
+  // Auth routes
+  app.post("/api/auth/login", (req, res, next) => {
+    passport.authenticate("local", async (err: any, user: Express.User | false, info: any) => {
       if (err) {
-        console.error("Authentication error:", err);
         return next(err);
       }
 
       if (!user) {
-        console.log("Authentication failed:", info.message);
         return res.status(400).send(info.message ?? "Login failed");
+      }
+
+      if (user.mfaEnabled) {
+        // Return a temporary token for MFA verification
+        const tempToken = jwt.sign(
+          { id: user.id, temp: true },
+          JWT_SECRET,
+          { expiresIn: '5m' }
+        );
+        return res.json({ 
+          requiresMfa: true,
+          tempToken
+        });
       }
 
       req.logIn(user, (err) => {
         if (err) {
-          console.error("Login error:", err);
           return next(err);
         }
 
+        const tokens = generateTokens(user);
         return res.json({
-          id: user.id,
-          username: user.username,
-          role: user.role,
-          roles: user.roles,
+          user: {
+            id: user.id,
+            username: user.username,
+            role: user.role,
+            roles: user.roles,
+          },
+          ...tokens
         });
       });
     })(req, res, next);
   });
 
-  app.post("/api/logout", (req, res) => {
+  app.post("/api/auth/refresh", (req, res) => {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).send("Refresh token required");
+    }
+
+    try {
+      const payload = jwt.verify(refreshToken, JWT_SECRET) as { id: number };
+      const tokens = generateTokens({ id: payload.id } as AuthUser);
+      res.json(tokens);
+    } catch (error) {
+      res.status(401).send("Invalid refresh token");
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
     req.logout((err) => {
       if (err) {
         return res.status(500).send("Logout failed");
@@ -290,7 +417,32 @@ export function setupAuth(app: Express) {
     });
   });
 
-  app.get("/api/user", (req, res) => {
+  // Social login routes
+  app.get('/auth/google',
+    passport.authenticate('google', { scope: ['profile', 'email'] })
+  );
+
+  app.get('/auth/google/callback',
+    passport.authenticate('google', { failureRedirect: '/login' }),
+    (req, res) => {
+      const tokens = generateTokens(req.user as AuthUser);
+      res.redirect(`/auth/success?tokens=${encodeURIComponent(JSON.stringify(tokens))}`);
+    }
+  );
+
+  app.get('/auth/linkedin',
+    passport.authenticate('linkedin')
+  );
+
+  app.get('/auth/linkedin/callback',
+    passport.authenticate('linkedin', { failureRedirect: '/login' }),
+    (req, res) => {
+      const tokens = generateTokens(req.user as AuthUser);
+      res.redirect(`/auth/success?tokens=${encodeURIComponent(JSON.stringify(tokens))}`);
+    }
+  );
+
+  app.get("/api/auth/user", (req, res) => {
     if (req.isAuthenticated()) {
       const user = req.user;
       return res.json({
@@ -298,8 +450,9 @@ export function setupAuth(app: Express) {
         username: user.username,
         role: user.role,
         roles: user.roles,
+        mfaEnabled: user.mfaEnabled
       });
     }
-    res.status(401).send("Not logged in");
+    res.status(401).send("Not authenticated");
   });
 }
