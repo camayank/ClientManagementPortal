@@ -28,15 +28,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Form,
   FormControl,
@@ -45,30 +40,35 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { useForm } from "react-hook-form";
 import type { User } from "@db/schema";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
+import UserDialog from "@/components/user-dialog";
 
-const credentialSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-  role: z.enum(["admin", "client"]),
-  fullName: z.string().min(1, "Full name is required"),
-  email: z.string().email("Invalid email address"),
+const resetPasswordSchema = z.object({
+  newPassword: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number")
+    .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character"),
+  confirmPassword: z.string()
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
 });
 
-type CredentialForm = z.infer<typeof credentialSchema>;
+type ResetPasswordForm = z.infer<typeof resetPasswordSchema>;
 
 export default function AdminCredentials() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [resetPasswordUserId, setResetPasswordUserId] = useState<number | null>(null);
   const { toast } = useToast();
-  
-  const form = useForm<CredentialForm>({
-    resolver: zodResolver(credentialSchema),
+
+  const resetPasswordForm = useForm<ResetPasswordForm>({
+    resolver: zodResolver(resetPasswordSchema),
     defaultValues: {
-      role: "client",
+      newPassword: "",
+      confirmPassword: "",
     },
   });
 
@@ -81,12 +81,14 @@ export default function AdminCredentials() {
     user.fullName?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const onSubmit = async (data: CredentialForm) => {
+  const handleResetPassword = async (data: ResetPasswordForm) => {
+    if (!resetPasswordUserId) return;
+
     try {
-      const response = await fetch('/api/admin/users', {
-        method: 'POST',
+      const response = await fetch(`/api/admin/users/${resetPasswordUserId}/reset-password`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ newPassword: data.newPassword }),
         credentials: 'include',
       });
 
@@ -96,10 +98,10 @@ export default function AdminCredentials() {
 
       toast({
         title: "Success",
-        description: "User credentials created successfully",
+        description: "Password has been reset successfully",
       });
-      setIsDialogOpen(false);
-      refetch();
+      setResetPasswordUserId(null);
+      resetPasswordForm.reset();
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -117,104 +119,7 @@ export default function AdminCredentials() {
             <h1 className="text-3xl font-bold">Credentials Management</h1>
             <p className="text-muted-foreground">Manage user credentials and access levels</p>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <UserPlus className="mr-2 h-4 w-4" />
-                Create New User
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)}>
-                  <DialogHeader>
-                    <DialogTitle>Create New User</DialogTitle>
-                    <DialogDescription>
-                      Add a new user with specified role and access level.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="grid gap-4 py-4">
-                    <FormField
-                      control={form.control}
-                      name="fullName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Full Name</FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="email"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Email Address</FormLabel>
-                          <FormControl>
-                            <Input type="email" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="username"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Username</FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="password"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Password</FormLabel>
-                          <FormControl>
-                            <Input type="password" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="role"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Role</FormLabel>
-                          <Select onValueChange={field.onChange} defaultValue={field.value}>
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select a role" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="client">Client</SelectItem>
-                              <SelectItem value="admin">Administrator</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  <DialogFooter>
-                    <Button type="submit">Create User</Button>
-                  </DialogFooter>
-                </form>
-              </Form>
-            </DialogContent>
-          </Dialog>
+          <UserDialog open={isDialogOpen} onOpenChange={setIsDialogOpen} />
         </div>
 
         <div className="flex items-center space-x-2">
@@ -269,10 +174,15 @@ export default function AdminCredentials() {
                     {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
                   </TableCell>
                   <TableCell>
-                    {new Date(user.createdAt).toLocaleDateString()}
+                    {user.createdAt && new Date(user.createdAt).toLocaleDateString()}
                   </TableCell>
                   <TableCell>
-                    <Button variant="ghost" size="sm" className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="flex items-center gap-1"
+                      onClick={() => setResetPasswordUserId(user.id)}
+                    >
                       <Key className="h-4 w-4" />
                       Reset Password
                     </Button>
@@ -283,6 +193,52 @@ export default function AdminCredentials() {
           </Table>
         </div>
       </div>
+
+      <Dialog open={resetPasswordUserId !== null} onOpenChange={() => setResetPasswordUserId(null)}>
+        <DialogContent>
+          <Form {...resetPasswordForm}>
+            <form onSubmit={resetPasswordForm.handleSubmit(handleResetPassword)}>
+              <DialogHeader>
+                <DialogTitle>Reset User Password</DialogTitle>
+                <DialogDescription>
+                  Enter a new password for the user. The password must be at least 8 characters long and contain uppercase, lowercase, number, and special characters.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <FormField
+                  control={resetPasswordForm.control}
+                  name="newPassword"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>New Password</FormLabel>
+                      <FormControl>
+                        <Input type="password" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={resetPasswordForm.control}
+                  name="confirmPassword"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Confirm Password</FormLabel>
+                      <FormControl>
+                        <Input type="password" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <DialogFooter>
+                <Button type="submit">Reset Password</Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

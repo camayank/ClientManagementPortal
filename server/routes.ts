@@ -205,15 +205,41 @@ export function registerRoutes(app: Express): Server {
   app.patch("/api/admin/users/:id/reset-password", requirePermission('users', 'update'), async (req, res) => {
     const { id } = req.params;
     const { newPassword } = req.body;
+
     try {
+      // Hash the new password
+      const hashedPassword = await hashPassword(newPassword);
+
+      // Update the user's password
       const [updatedUser] = await db.update(users)
-        .set({ password: newPassword })
+        .set({ 
+          password: hashedPassword,
+          updatedAt: new Date()
+        })
         .where(eq(users.id, parseInt(id)))
         .returning();
-      res.json(updatedUser);
+
+      if (!updatedUser) {
+        return res.status(404).json({
+          message: "User not found"
+        });
+      }
+
+      // Return success response without sensitive data
+      res.json({
+        message: "Password updated successfully",
+        user: {
+          id: updatedUser.id,
+          username: updatedUser.username,
+          updatedAt: updatedUser.updatedAt
+        }
+      });
     } catch (error) {
       console.error("Error resetting password:", error);
-      res.status(500).send("Failed to reset password");
+      res.status(500).json({
+        message: "Failed to reset password",
+        error: (error as Error).message
+      });
     }
   });
 
@@ -891,7 +917,7 @@ export function registerRoutes(app: Express): Server {
         .limit(1);
 
       if (existingAdmin) {
-        returnres.status(400).send("Admin user already exists");
+        return res.status(400).send("Admin user already exists");
       }
 
       const { username, password } = req.body;
