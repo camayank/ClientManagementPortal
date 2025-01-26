@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { WebSocketService } from "./websocket/server";
 import { setupAuth } from "./auth";
+import { WebSocketService } from "./websocket/server";
 import clientRouter from "./routes/client";
 import { db } from "@db";
 import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles, clientOnboarding, servicePackages, clientServices, clientOnboardingDocuments, clientCommunications, serviceFeatureTiers, serviceFeatures, customPricingRules, tasks, taskCategories, taskDependencies, taskStatusHistory, insertTaskSchema, insertTaskCategorySchema } from "@db/schema";
@@ -23,13 +23,19 @@ const upload = multer({
 export let wsService: WebSocketService;
 
 export function registerRoutes(app: Express): Server {
+  // Initialize authentication first
   setupAuth(app);
-
-  // Register client routes
-  app.use("/api/client", clientRouter);
 
   const httpServer = createServer(app);
   wsService = new WebSocketService(httpServer);
+
+  // Test endpoint to verify API is working
+  app.get("/api/health", (_req, res) => {
+    res.json({ status: "ok" });
+  });
+
+  // Register client routes
+  app.use("/api/client", clientRouter);
 
   app.post("/api/documents/upload", requirePermission('documents', 'create'), upload.single('file'), async (req, res) => {
     try {
