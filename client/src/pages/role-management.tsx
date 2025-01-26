@@ -12,7 +12,14 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Role } from "@db/schema";
 import RoleDialog from "@/components/role-dialog";
+import { RoleCapabilitiesView } from "@/components/role-capabilities";
 import { useState } from "react";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 export default function RoleManagement() {
   const { toast } = useToast();
@@ -32,8 +39,8 @@ export default function RoleManagement() {
   }
 
   return (
-    <div className="container mx-auto py-10">
-      <div className="flex justify-between items-center mb-6">
+    <div className="container mx-auto py-10 space-y-8">
+      <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Role Management</h1>
         <Button onClick={() => {
           setSelectedRole(null);
@@ -60,7 +67,7 @@ export default function RoleManagement() {
                 <TableCell className="font-medium">{role.name}</TableCell>
                 <TableCell>{role.description}</TableCell>
                 <TableCell>
-                  {new Date(role.createdAt).toLocaleDateString()}
+                  {role.createdAt ? new Date(role.createdAt).toLocaleDateString() : 'N/A'}
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-2">
@@ -93,6 +100,17 @@ export default function RoleManagement() {
           </TableBody>
         </Table>
       </div>
+
+      <Accordion type="single" collapsible className="w-full">
+        <AccordionItem value="role-capabilities">
+          <AccordionTrigger className="text-xl font-semibold">
+            Role Capabilities Reference
+          </AccordionTrigger>
+          <AccordionContent>
+            <RoleCapabilitiesView />
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
 
       <RoleDialog
         open={isDialogOpen}
