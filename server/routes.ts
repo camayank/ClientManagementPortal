@@ -3,9 +3,9 @@ import { createServer, type Server } from "http";
 import { WebSocketService } from "./websocket/server";
 import { setupAuth, hashPassword } from "./auth";
 import { db } from "@db";
-import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles, clientOnboarding, servicePackages, clientServices } from "@db/schema";
+import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles, clientOnboarding, servicePackages, clientServices, clientOnboardingDocuments, clientCommunications } from "@db/schema";
 import multer from "multer";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, desc } from "drizzle-orm";
 import { requirePermission } from "./middleware/check-permission";
 import crypto from 'crypto';
 import path from 'path';
@@ -658,7 +658,6 @@ export function registerRoutes(app: Express): Server {
   });
 
 
-
   app.get("/api/admin/reports", requirePermission('reports', 'read'), async (req, res) => {
     const { type, startDate, endDate } = req.query;
     if (!startDate || !endDate) {
@@ -902,7 +901,7 @@ export function registerRoutes(app: Express): Server {
         .values({
           username,
           password,
-          role: 'client',
+          role: 'client'
         })
         .returning();
 
@@ -912,7 +911,7 @@ export function registerRoutes(app: Express): Server {
           .values({
             userId: newUser.id,
             company: username,
-            status: 'active',
+            status: 'active'
           });
       }
 
@@ -923,7 +922,7 @@ export function registerRoutes(app: Express): Server {
         }
         return res.json({
           message: "Registration successful",
-          user: { id: newUser.id, username: newUser.username },
+          user: { id: newUser.id, username: newUser.username }
         });
       });
     } catch (error) {
@@ -966,7 +965,7 @@ export function registerRoutes(app: Express): Server {
         })
         .returning();
 
-      res.status(201).json(newPackage);
+      res.json(newPackage);
     } catch (error) {
       console.error("Error creating service package:", error);
       res.status(500).json({
@@ -1036,6 +1035,147 @@ export function registerRoutes(app: Express): Server {
       console.error("Error fetching package clients:", error);
       res.status(500).json({
         message: "Failed to fetch package clients",
+        error: (error as Error).message
+      });
+    }
+  });
+  // Document tracking for onboarding
+  app.post("/api/admin/client-onboarding/:id/documents", requirePermission('onboarding', 'update'), async (req, res) => {
+    const { id } = req.params;
+    const { documentType, name, required } = req.body;
+
+    try {
+      const [document] = await db.insert(clientOnboardingDocuments)
+        .values({
+          onboardingId: parseInt(id),
+          documentType,
+          name,
+          required,
+          status: 'pending',
+          uploadedAt: null
+        })
+        .returning();
+
+      res.json(document);
+    } catch (error) {
+      console.error("Error adding onboarding document:", error);
+      res.status(500).json({
+        message: "Failed to add document requirement",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.get("/api/admin/client-onboarding/:id/documents", requirePermission('onboarding', 'read'), async (req, res) => {
+    const { id } = req.params;
+    try {
+      const documents = await db.select()
+        .from(clientOnboardingDocuments)
+        .where(eq(clientOnboardingDocuments.onboardingId, parseInt(id)));
+
+      res.json(documents);
+    } catch (error) {
+      console.error("Error fetching onboarding documents:", error);
+      res.status(500).json({
+        message: "Failed to fetch documents",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  // Communication history
+  app.post("/api/admin/client-onboarding/:id/communications", requirePermission('onboarding', 'update'), async (req, res) => {
+    const { id } = req.params;
+    const { type, message, direction } = req.body;
+    const user = req.user as any;
+
+    try {
+      const [communication] = await db.insert(clientCommunications)
+        .values({
+          onboardingId: parseInt(id),
+          type,
+          message,
+          direction,
+          userId: user.id,
+          timestamp: new Date()
+        })
+        .returning();
+
+      res.json(communication);
+    } catch (error) {
+      console.error("Error adding communication:", error);
+      res.status(500).json({
+        message: "Failed to add communication",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.get("/api/admin/client-onboarding/:id/communications", requirePermission('onboarding', 'read'), async (req, res) => {
+    const { id } = req.params;
+    try {
+      const communications = await db.select({
+        id: clientCommunications.id,
+        type: clientCommunications.type,
+        message: clientCommunications.message,
+        direction: clientCommunications.direction,
+        timestamp: clientCommunications.timestamp,
+        user: users
+      })
+        .from(clientCommunications)
+        .leftJoin(users, eq(clientCommunications.userId, users.id))
+        .where(eq(clientCommunications.onboardingId, parseInt(id)))
+        .orderBy(desc(clientCommunications.timestamp));
+
+      res.json(communications);
+    } catch (error) {
+      console.error("Error fetching communications:", error);
+      res.status(500).json({
+        message: "Failed to fetch communications",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  // Service package assignment
+  app.post("/api/admin/client-onboarding/:id/assign-package", requirePermission('onboarding', 'update'), async (req, res) => {
+    const { id } = req.params;
+    const { packageId } = req.body;
+
+    try {
+      // Get the client ID from onboarding record
+      const [onboarding] = await db.select()
+        .from(clientOnboarding)
+        .where(eq(clientOnboarding.id, parseInt(id)))
+        .limit(1);
+
+      if (!onboarding) {
+        return res.status(404).json({ message: "Onboarding record not found" });
+      }
+
+      // Assign the service package to the client
+      const [clientService] = await db.insert(clientServices)
+        .values({
+          clientId: onboarding.clientId,
+          packageId: parseInt(packageId),
+          startDate: new Date(),
+          status: 'pending'
+        })
+        .returning();
+
+      // Update onboarding record
+      await db.update(clientOnboarding)
+        .set({
+          currentStep: 'service_setup',
+          notes: `Service package ${packageId} assigned`
+        })
+        .where(eq(clientOnboarding.id, parseInt(id)));
+
+      res.json(clientService);
+    } catch (error) {
+      console.error("Error assigning package:", error);
+      res.status(500).json({
+        message: "Failed to assign package",
         error: (error as Error).message
       });
     }

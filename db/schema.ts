@@ -182,17 +182,14 @@ export const clientEngagement = pgTable("client_engagement", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-export const clientCommunication = pgTable("client_communication", {
+export const clientCommunications = pgTable("client_communications", {
   id: serial("id").primaryKey(),
-  clientId: integer("client_id").references(() => clients.id).notNull(),
+  onboardingId: integer("onboarding_id").references(() => clientOnboarding.id).notNull(),
   userId: integer("user_id").references(() => users.id).notNull(),
-  type: text("type", {
-    enum: ["email", "call", "meeting", "document", "other"]
-  }).notNull(),
-  subject: text("subject").notNull(),
-  content: text("content"),
-  metadata: jsonb("metadata"),
-  createdAt: timestamp("created_at").defaultNow(),
+  type: text("type", { enum: ["email", "call", "meeting", "note"] }).notNull(),
+  message: text("message").notNull(),
+  direction: text("direction", { enum: ["incoming", "outgoing"] }).notNull(),
+  timestamp: timestamp("timestamp").defaultNow(),
 });
 
 export const clientServices = pgTable("client_services", {
@@ -209,6 +206,18 @@ export const clientServices = pgTable("client_services", {
     enum: ["monthly", "quarterly", "annual"]
   }).notNull(),
   priceOverride: numeric("price_override"),
+});
+
+// Add new tables after the existing client onboarding table
+export const clientOnboardingDocuments = pgTable("client_onboarding_documents", {
+  id: serial("id").primaryKey(),
+  onboardingId: integer("onboarding_id").references(() => clientOnboarding.id).notNull(),
+  documentType: text("document_type").notNull(),
+  name: text("name").notNull(),
+  required: boolean("required").default(true),
+  status: text("status", { enum: ["pending", "uploaded", "approved", "rejected"] }).default("pending"),
+  uploadedAt: timestamp("uploaded_at"),
+  documentId: integer("document_id").references(() => documents.id),
 });
 
 // Relations
@@ -234,7 +243,6 @@ export const clientsRelations = relations(clients, ({ one, many }) => ({
   projects: many(projects),
   onboarding: one(clientOnboarding),
   engagement: one(clientEngagement),
-  communications: many(clientCommunication),
   services: many(clientServices),
 }));
 
@@ -333,7 +341,8 @@ export const servicePackagesRelations = relations(servicePackages, ({ many }) =>
   clientServices: many(clientServices),
 }));
 
-export const clientOnboardingRelations = relations(clientOnboarding, ({ one }) => ({
+// Update communications relation in clientOnboardingRelations
+export const clientOnboardingRelations = relations(clientOnboarding, ({ one, many }) => ({
   client: one(clients, {
     fields: [clientOnboarding.clientId],
     references: [clients.id],
@@ -342,6 +351,8 @@ export const clientOnboardingRelations = relations(clientOnboarding, ({ one }) =
     fields: [clientOnboarding.assignedTo],
     references: [users.id],
   }),
+  communications: many(clientCommunications),
+  documents: many(clientOnboardingDocuments),
 }));
 
 export const clientEngagementRelations = relations(clientEngagement, ({ one }) => ({
@@ -351,13 +362,13 @@ export const clientEngagementRelations = relations(clientEngagement, ({ one }) =
   }),
 }));
 
-export const clientCommunicationRelations = relations(clientCommunication, ({ one }) => ({
-  client: one(clients, {
-    fields: [clientCommunication.clientId],
-    references: [clients.id],
+export const clientCommunicationsRelations = relations(clientCommunications, ({ one }) => ({
+  onboarding: one(clientOnboarding, {
+    fields: [clientCommunications.onboardingId],
+    references: [clientOnboarding.id],
   }),
   user: one(users, {
-    fields: [clientCommunication.userId],
+    fields: [clientCommunications.userId],
     references: [users.id],
   }),
 }));
@@ -373,6 +384,17 @@ export const clientServicesRelations = relations(clientServices, ({ one }) => ({
   }),
 }));
 
+// Add relations
+export const clientOnboardingDocumentsRelations = relations(clientOnboardingDocuments, ({ one }) => ({
+  onboarding: one(clientOnboarding, {
+    fields: [clientOnboardingDocuments.onboardingId],
+    references: [clientOnboarding.id],
+  }),
+  document: one(documents, {
+    fields: [clientOnboardingDocuments.documentId],
+    references: [documents.id],
+  }),
+}));
 
 // Schema validation
 export const insertUserSchema = createInsertSchema(users);
@@ -399,10 +421,15 @@ export const insertClientOnboardingSchema = createInsertSchema(clientOnboarding)
 export const selectClientOnboardingSchema = createSelectSchema(clientOnboarding);
 export const insertClientEngagementSchema = createInsertSchema(clientEngagement);
 export const selectClientEngagementSchema = createSelectSchema(clientEngagement);
-export const insertClientCommunicationSchema = createInsertSchema(clientCommunication);
-export const selectClientCommunicationSchema = createSelectSchema(clientCommunication);
+
+export const insertClientCommunicationsSchema = createInsertSchema(clientCommunications);
+export const selectClientCommunicationsSchema = createSelectSchema(clientCommunications);
+
 export const insertClientServicesSchema = createInsertSchema(clientServices);
 export const selectClientServicesSchema = createSelectSchema(clientServices);
+export const insertClientOnboardingDocumentSchema = createInsertSchema(clientOnboardingDocuments);
+export const selectClientOnboardingDocumentSchema = createSelectSchema(clientOnboardingDocuments);
+
 
 // Types
 export type User = typeof users.$inferSelect;
@@ -429,7 +456,9 @@ export type ClientOnboarding = typeof clientOnboarding.$inferSelect;
 export type NewClientOnboarding = typeof clientOnboarding.$inferInsert;
 export type ClientEngagement = typeof clientEngagement.$inferSelect;
 export type NewClientEngagement = typeof clientEngagement.$inferInsert;
-export type ClientCommunication = typeof clientCommunication.$inferSelect;
-export type NewClientCommunication = typeof clientCommunication.$inferInsert;
 export type ClientService = typeof clientServices.$inferSelect;
 export type NewClientService = typeof clientServices.$inferInsert;
+export type ClientOnboardingDocument = typeof clientOnboardingDocuments.$inferSelect;
+export type NewClientOnboardingDocument = typeof clientOnboardingDocuments.$inferInsert;
+export type ClientCommunication = typeof clientCommunications.$inferSelect;
+export type NewClientCommunication = typeof clientCommunications.$inferInsert;
