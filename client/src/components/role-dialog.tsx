@@ -7,14 +7,12 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Role, Permission } from "@db/schema";
 import { z } from "zod";
 import { useState } from "react";
 
 const roleSchema = z.object({
   name: z.string().min(1, "Role name is required"),
   description: z.string().min(1, "Description is required"),
-  permissions: z.array(z.string()),
 });
 
 type RoleFormData = z.infer<typeof roleSchema>;
@@ -22,7 +20,7 @@ type RoleFormData = z.infer<typeof roleSchema>;
 interface RoleDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  role: Role | null;
+  role?: { id: number; name: string; description: string; permissions: {id: string}[] } | null;
 }
 
 const AVAILABLE_PERMISSIONS = [
@@ -43,7 +41,7 @@ export default function RoleDialog({ open, onOpenChange, role }: RoleDialogProps
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>(
-    role?.permissions?.map(p => p.id) || []
+    role?.permissions?.map((p: any) => p.id) || []
   );
 
   const { register, handleSubmit, formState: { errors }, reset } = useForm<RoleFormData>({
@@ -51,7 +49,6 @@ export default function RoleDialog({ open, onOpenChange, role }: RoleDialogProps
     defaultValues: {
       name: role?.name || "",
       description: role?.description || "",
-      permissions: selectedPermissions,
     },
   });
 
@@ -60,7 +57,10 @@ export default function RoleDialog({ open, onOpenChange, role }: RoleDialogProps
       const response = await fetch(role ? `/api/admin/roles/${role.id}` : '/api/admin/roles', {
         method: role ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          ...data,
+          permissions: selectedPermissions,
+        }),
       });
 
       if (!response.ok) {
@@ -76,6 +76,7 @@ export default function RoleDialog({ open, onOpenChange, role }: RoleDialogProps
         title: "Success",
         description: `Role ${role ? 'updated' : 'created'} successfully`,
       });
+      reset();
     },
     onError: (error) => {
       toast({
@@ -87,29 +88,27 @@ export default function RoleDialog({ open, onOpenChange, role }: RoleDialogProps
   });
 
   const onSubmit = (data: RoleFormData) => {
-    mutation.mutate({
-      ...data,
-      permissions: selectedPermissions,
-    });
+    mutation.mutate({...data, permissions: selectedPermissions})
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>{role ? 'Edit Role' : 'Create New Role'}</DialogTitle>
+          <DialogTitle>Create New Role</DialogTitle>
         </DialogHeader>
+
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           <div className="space-y-4">
             <div>
               <Label htmlFor="name">Role Name</Label>
               <Input
                 id="name"
+                className="mt-1.5"
                 {...register("name")}
-                className="mt-1"
               />
               {errors.name && (
-                <p className="text-sm text-red-500 mt-1">{errors.name.message}</p>
+                <p className="text-sm text-destructive mt-1">{errors.name.message}</p>
               )}
             </div>
 
@@ -117,17 +116,17 @@ export default function RoleDialog({ open, onOpenChange, role }: RoleDialogProps
               <Label htmlFor="description">Description</Label>
               <Input
                 id="description"
+                className="mt-1.5"
                 {...register("description")}
-                className="mt-1"
               />
               {errors.description && (
-                <p className="text-sm text-red-500 mt-1">{errors.description.message}</p>
+                <p className="text-sm text-destructive mt-1">{errors.description.message}</p>
               )}
             </div>
 
             <div>
               <Label>Permissions</Label>
-              <div className="grid grid-cols-2 gap-4 mt-2">
+              <div className="grid grid-cols-2 gap-4 mt-2 border rounded-lg p-4">
                 {AVAILABLE_PERMISSIONS.map((permission) => (
                   <div key={permission.id} className="flex items-center space-x-2">
                     <Checkbox
@@ -137,15 +136,13 @@ export default function RoleDialog({ open, onOpenChange, role }: RoleDialogProps
                         if (checked) {
                           setSelectedPermissions([...selectedPermissions, permission.id]);
                         } else {
-                          setSelectedPermissions(
-                            selectedPermissions.filter((p) => p !== permission.id)
-                          );
+                          setSelectedPermissions(selectedPermissions.filter((p) => p !== permission.id));
                         }
                       }}
                     />
                     <label
                       htmlFor={permission.id}
-                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                      className="text-sm text-muted-foreground"
                     >
                       {permission.label}
                     </label>
@@ -166,8 +163,8 @@ export default function RoleDialog({ open, onOpenChange, role }: RoleDialogProps
             >
               Cancel
             </Button>
-            <Button type="submit">
-              {role ? 'Update' : 'Create'} Role
+            <Button type="submit" disabled={mutation.isPending}>
+              {mutation.isPending ? "Creating..." : "Create Role"}
             </Button>
           </div>
         </form>
