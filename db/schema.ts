@@ -1,6 +1,6 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb, date, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, date, numeric, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 // Roles and Permissions tables
 export const roles = pgTable("roles", {
@@ -143,11 +143,17 @@ export const servicePackages = pgTable("service_packages", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
+  tierId: integer("tier_id").references(() => serviceFeatureTiers.id),
   features: jsonb("features"),
   basePrice: numeric("base_price"),
   billingCycle: text("billing_cycle", { enum: ["monthly", "quarterly", "annual"] }).notNull(),
   isActive: boolean("is_active").default(true),
+  sortOrder: integer("sort_order").default(0),
+  upgradeToPackageId: integer("upgrade_to_package_id").references(() => servicePackages.id),
+  customizationRules: jsonb("customization_rules"), // Rules for price adjustments
+  comparisonData: jsonb("comparison_data"), // Metadata for package comparison
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
 });
 
 export const clientOnboarding = pgTable("client_onboarding", {
@@ -206,6 +212,11 @@ export const clientServices = pgTable("client_services", {
     enum: ["monthly", "quarterly", "annual"]
   }).notNull(),
   priceOverride: numeric("price_override"),
+  nextBillingDate: date("next_billing_date"),
+  appliedRules: jsonb("applied_rules"), // Array of applied pricing rules
+  customFeatures: jsonb("custom_features"), // Custom feature values
+  autoRenew: boolean("auto_renew").default(true),
+  renewalNotificationSent: boolean("renewal_notification_sent").default(false),
 });
 
 // Add new tables after the existing client onboarding table
@@ -219,6 +230,61 @@ export const clientOnboardingDocuments = pgTable("client_onboarding_documents", 
   uploadedAt: timestamp("uploaded_at"),
   documentId: integer("document_id").references(() => documents.id),
 });
+
+
+// New tables for enhanced service package management
+export const serviceFeatureTiers = pgTable("service_feature_tiers", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  level: integer("level").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const serviceFeatures = pgTable("service_features", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  type: text("type", {
+    enum: ["boolean", "numeric", "text"]
+  }).notNull(),
+  unit: text("unit"), // For numeric features (e.g., "GB", "users", etc.)
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const serviceTierFeatures = pgTable("service_tier_features", {
+  id: serial("id").primaryKey(),
+  tierId: integer("tier_id").references(() => serviceFeatureTiers.id).notNull(),
+  featureId: integer("feature_id").references(() => serviceFeatures.id).notNull(),
+  value: text("value").notNull(), // JSON string for different types of values
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Package change history
+export const packageChangeHistory = pgTable("package_change_history", {
+  id: serial("id").primaryKey(),
+  clientServiceId: integer("client_service_id").references(() => clientServices.id).notNull(),
+  previousPackageId: integer("previous_package_id").references(() => servicePackages.id).notNull(),
+  newPackageId: integer("new_package_id").references(() => servicePackages.id).notNull(),
+  changeType: text("change_type", { enum: ["upgrade", "downgrade", "custom"] }).notNull(),
+  reason: text("reason"),
+  effectiveDate: timestamp("effective_date").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Custom pricing rules
+export const customPricingRules = pgTable("custom_pricing_rules", {
+  id: serial("id").primaryKey(),
+  packageId: integer("package_id").references(() => servicePackages.id).notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  condition: jsonb("condition").notNull(), // JSON object defining when rule applies
+  adjustment: jsonb("adjustment").notNull(), // JSON object defining price adjustment
+  priority: integer("priority").default(0),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
@@ -337,8 +403,17 @@ export const projectTemplatesRelations = relations(projectTemplates, ({ many }) 
   projects: many(projects),
 }));
 
-export const servicePackagesRelations = relations(servicePackages, ({ many }) => ({
+export const servicePackagesRelations = relations(servicePackages, ({ one, many }) => ({
+  tier: one(serviceFeatureTiers, {
+    fields: [servicePackages.tierId],
+    references: [serviceFeatureTiers.id],
+  }),
+  upgradeTo: one(servicePackages, {
+    fields: [servicePackages.upgradeToPackageId],
+    references: [servicePackages.id],
+  }),
   clientServices: many(clientServices),
+  customRules: many(customPricingRules),
 }));
 
 // Update communications relation in clientOnboardingRelations
@@ -396,6 +471,27 @@ export const clientOnboardingDocumentsRelations = relations(clientOnboardingDocu
   }),
 }));
 
+export const serviceFeatureTiersRelations = relations(serviceFeatureTiers, ({ many }) => ({
+  features: many(serviceTierFeatures),
+  packages: many(servicePackages),
+}));
+
+export const serviceFeaturesRelations = relations(serviceFeatures, ({ many }) => ({
+  tiers: many(serviceTierFeatures),
+}));
+
+export const serviceTierFeaturesRelations = relations(serviceTierFeatures, ({ one }) => ({
+  tier: one(serviceFeatureTiers, {
+    fields: [serviceTierFeatures.tierId],
+    references: [serviceFeatureTiers.id],
+  }),
+  feature: one(serviceFeatures, {
+    fields: [serviceTierFeatures.featureId],
+    references: [serviceFeatures.id],
+  }),
+}));
+
+
 // Schema validation
 export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
@@ -430,6 +526,17 @@ export const selectClientServicesSchema = createSelectSchema(clientServices);
 export const insertClientOnboardingDocumentSchema = createInsertSchema(clientOnboardingDocuments);
 export const selectClientOnboardingDocumentSchema = createSelectSchema(clientOnboardingDocuments);
 
+export const insertServiceFeatureTierSchema = createInsertSchema(serviceFeatureTiers);
+export const selectServiceFeatureTierSchema = createSelectSchema(serviceFeatureTiers);
+export const insertServiceFeatureSchema = createInsertSchema(serviceFeatures);
+export const selectServiceFeatureSchema = createSelectSchema(serviceFeatures);
+export const insertServiceTierFeatureSchema = createInsertSchema(serviceTierFeatures);
+export const selectServiceTierFeatureSchema = createSelectSchema(serviceTierFeatures);
+export const insertCustomPricingRuleSchema = createInsertSchema(customPricingRules);
+export const selectCustomPricingRuleSchema = createSelectSchema(customPricingRules);
+export const insertPackageChangeHistorySchema = createInsertSchema(packageChangeHistory);
+export const selectPackageChangeHistorySchema = createSelectSchema(packageChangeHistory);
+
 
 // Types
 export type User = typeof users.$inferSelect;
@@ -462,3 +569,13 @@ export type ClientOnboardingDocument = typeof clientOnboardingDocuments.$inferSe
 export type NewClientOnboardingDocument = typeof clientOnboardingDocuments.$inferInsert;
 export type ClientCommunication = typeof clientCommunications.$inferSelect;
 export type NewClientCommunication = typeof clientCommunications.$inferInsert;
+export type ServiceFeatureTier = typeof serviceFeatureTiers.$inferSelect;
+export type NewServiceFeatureTier = typeof serviceFeatureTiers.$inferInsert;
+export type ServiceFeature = typeof serviceFeatures.$inferSelect;
+export type NewServiceFeature = typeof serviceFeatures.$inferInsert;
+export type ServiceTierFeature = typeof serviceTierFeatures.$inferSelect;
+export type NewServiceTierFeature = typeof serviceTierFeatures.$inferInsert;
+export type CustomPricingRule = typeof customPricingRules.$inferSelect;
+export type NewCustomPricingRule = typeof customPricingRules.$inferInsert;
+export type PackageChangeHistory = typeof packageChangeHistory.$inferSelect;
+export type NewPackageChangeHistory = typeof packageChangeHistory.$inferInsert;
