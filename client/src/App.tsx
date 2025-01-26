@@ -20,6 +20,7 @@ import RoleManagement from "@/pages/role-management";
 import UserRoleManagement from "@/pages/admin/user-roles";
 import ClientOnboarding from "@/pages/admin/client-onboarding";
 import ServicePackages from "@/pages/admin/service-packages";
+import TasksPage from "@/pages/tasks";
 
 function ProtectedRoute({ 
   component: Component, 
@@ -65,6 +66,7 @@ function Router() {
           <Route path="/admin/reports" component={() => <ProtectedRoute component={AdminReports} isAdmin={true} />} />
           <Route path="/admin/roles" component={() => <ProtectedRoute component={RoleManagement} isAdmin={true} />} />
           <Route path="/admin/user-roles" component={() => <ProtectedRoute component={UserRoleManagement} isAdmin={true} />} />
+          <Route path="/admin/tasks" component={() => <ProtectedRoute component={TasksPage} isAdmin={true} />} />
         </>
       ) : (
         <>
@@ -73,6 +75,7 @@ function Router() {
           <Route path="/client/projects" component={() => <ProtectedRoute component={ClientProjects} isAdmin={false} />} />
           <Route path="/client/projects/:id" component={() => <ProtectedRoute component={ProjectDetails} isAdmin={false} />} />
           <Route path="/client/documents" component={() => <ProtectedRoute component={ClientDocuments} isAdmin={false} />} />
+          <Route path="/client/tasks" component={() => <ProtectedRoute component={TasksPage} isAdmin={false} />} />
         </>
       )}
       <Route path="/">
