@@ -171,7 +171,7 @@ export default function UserDialog({ open, onOpenChange }: UserDialogProps) {
                 Role
               </Label>
               <Select 
-                onValueChange={(value) => form.setValue("role", value as any)}
+                onValueChange={(value) => form.setValue("role", value as UserFormData["role"])}
                 defaultValue={form.getValues("role")}
               >
                 <SelectTrigger className="w-full">
