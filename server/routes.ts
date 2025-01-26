@@ -887,7 +887,7 @@ export function registerRoutes(app: Express): Server {
       const { username, password } = result.data;
       const [existingUser] = await db
         .select()
-        .from(users)
+        .from        .from(users)
         .where(eq(users.username, username))
         .limit(1);
 
@@ -1176,6 +1176,113 @@ export function registerRoutes(app: Express): Server {
       console.error("Error assigning package:", error);
       res.status(500).json({
         message: "Failed to assign package",
+        error: (error as Error).message
+      });
+    }
+  });
+  // Add client onboarding routes
+  app.get("/api/admin/client-onboarding", requirePermission('clients', 'read'), async (req, res) => {
+    try {
+      const onboardingList = await db.select({
+        id: clientOnboarding.id,
+        clientId: clientOnboarding.clientId,
+        currentStep: clientOnboarding.currentStep,
+        startedAt: clientOnboarding.startedAt,
+        completedAt: clientOnboarding.completedAt,
+        assignedTo: clientOnboarding.assignedTo,
+        notes: clientOnboarding.notes,
+        client: {
+          id: clients.id,
+          company: clients.company,
+          status: clients.status,
+        },
+        assignedUser: {
+          id: users.id,
+          username: users.username,
+        },
+      })
+        .from(clientOnboarding)
+        .leftJoin(clients, eq(clientOnboarding.clientId, clients.id))
+        .leftJoin(users, eq(clientOnboarding.assignedTo, users.id));
+      res.json(onboardingList);
+    } catch (error) {
+      console.error("Error fetching client onboarding:", error);
+      res.status(500).json({
+        message: "Failed to fetch client onboarding",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.patch("/api/admin/client-onboarding/:id/step", requirePermission('clients', 'update'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { step, notes } = req.body;
+
+      const [updatedOnboarding] = await db.update(clientOnboarding)
+        .set({
+          currentStep: step,
+          notes: notes,
+          ...(step === 'completed' ? { completedAt: new Date() } : {}),
+        })
+        .where(eq(clientOnboarding.id, parseInt(id)))
+        .returning();
+
+      res.json(updatedOnboarding);
+    } catch (error) {
+      console.error("Error updating onboarding step:", error);
+      res.status(500).json({
+        message: "Failed to update onboarding step",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.post("/api/admin/client-onboarding/:id/documents", requirePermission('documents', 'create'), upload.single('file'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { documentType } = req.body;
+      const file = req.file;
+
+      if (!file) {
+        return res.status(400).send("No file uploaded");
+      }
+
+      const [onboardingDoc] = await db.insert(clientOnboardingDocuments)
+        .values({
+          clientOnboardingId: parseInt(id),
+          documentType,
+          fileName: file.originalname,
+          fileSize: file.size,
+          mimeType: file.mimetype,
+          uploadedBy: (req.user as any).id,
+          metadata: {
+            path: file.path,
+          },
+        })
+        .returning();
+
+      res.json(onboardingDoc);
+    } catch (error) {
+      console.error("Error uploading document:", error);
+      res.status(500).json({
+        message: "Failed to upload document",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.get("/api/admin/client-onboarding/documents/:id", requirePermission('documents', 'read'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const docs = await db.select()
+        .from(clientOnboardingDocuments)
+        .where(eq(clientOnboardingDocuments.clientOnboardingId, parseInt(id)));
+      res.json(docs);
+    } catch (error) {
+      console.error("Error fetching documents:", error);
+      res.status(500).json({
+        message: "Failed to fetch documents",
         error: (error as Error).message
       });
     }
