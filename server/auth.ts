@@ -32,6 +32,9 @@ const passwordResetSchema = z.object({
 // Define a type that extends the base User type from schema
 type AuthUser = Omit<User, 'password'> & {
   roles?: string[];
+  id: number;
+  username: string;
+  role: string;
 };
 
 declare global {
@@ -98,7 +101,7 @@ export function setupAuth(app: Express) {
           return done(null, false, { message: "Incorrect username." });
         }
 
-        console.log("Found user:", { ...user, password: '[REDACTED]' });
+        console.log("Found user:", { id: user.id, username: user.username });
 
         const isValidPassword = await comparePassword(password, user.password);
         console.log("Password validation result:", isValidPassword);
@@ -118,9 +121,10 @@ export function setupAuth(app: Express) {
 
         console.log("User roles:", userRolesData);
 
-        const userWithRoles: AuthUser = {
-          ...user,
-          password: undefined,
+        const userForSession: AuthUser = {
+          id: user.id,
+          username: user.username,
+          role: user.role,
           roles: userRolesData.map(r => r.roleName),
         };
 
@@ -129,7 +133,7 @@ export function setupAuth(app: Express) {
           .set({ lastLogin: new Date() })
           .where(eq(users.id, user.id));
 
-        return done(null, userWithRoles);
+        return done(null, userForSession);
       } catch (err) {
         console.error("Login error:", err);
         return done(err);
@@ -162,13 +166,14 @@ export function setupAuth(app: Express) {
         .innerJoin(roles, eq(userRoles.roleId, roles.id))
         .where(eq(userRoles.userId, user.id));
 
-      const userWithRoles: AuthUser = {
-        ...user,
-        password: undefined,
+      const userForSession: AuthUser = {
+        id: user.id,
+        username: user.username,
+        role: user.role,
         roles: userRolesData.map(r => r.roleName),
       };
 
-      done(null, userWithRoles);
+      done(null, userForSession);
     } catch (err) {
       console.error("Deserialize error:", err);
       done(err);
