@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketService } from "./websocket/server";
 import { setupAuth, hashPassword } from "./auth";
 import { db } from "@db";
-import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles } from "@db/schema"; // Added roles, permissions, rolePermissions, userRoles
+import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles } from "@db/schema";
 import multer from "multer";
 import { eq, and, sql } from "drizzle-orm";
 import { requirePermission } from "./middleware/check-permission";
@@ -123,34 +123,82 @@ export function registerRoutes(app: Express): Server {
   app.post("/api/admin/users", requirePermission('users', 'create'), async (req, res) => {
     const { username, password, role, fullName, email } = req.body;
     try {
+      // Check if user already exists
       const [existingUser] = await db.select()
         .from(users)
         .where(eq(users.username, username))
         .limit(1);
+
       if (existingUser) {
-        return res.status(400).send("Username already exists");
+        return res.status(400).json({
+          message: "Username already exists"
+        });
       }
-      const [newUser] = await db.insert(users)
-        .values({
-          username,
-          password,
-          role,
-          fullName,
-          email,
-        })
-        .returning();
-      if (role === 'client') {
-        await db.insert(clients)
+
+      // Hash the password
+      const hashedPassword = await hashPassword(password);
+
+      // Start a transaction to ensure all operations succeed or fail together
+      const [newUser] = await db.transaction(async (tx) => {
+        // Create the user
+        const [user] = await tx.insert(users)
           .values({
-            userId: newUser.id,
-            company: fullName,
-            status: 'active',
-          });
-      }
-      res.json(newUser);
+            username,
+            password: hashedPassword,
+            role,
+            fullName,
+            email,
+            createdAt: new Date(),
+            lastLogin: null
+          })
+          .returning();
+
+        // Get the role ID
+        const [roleRecord] = await tx.select()
+          .from(roles)
+          .where(eq(roles.name, role))
+          .limit(1);
+
+        if (roleRecord) {
+          // Assign role to user
+          await tx.insert(userRoles)
+            .values({
+              userId: user.id,
+              roleId: roleRecord.id
+            });
+
+          // If it's a client, create a client record
+          if (role === 'client') {
+            await tx.insert(clients)
+              .values({
+                userId: user.id,
+                company: fullName || username,
+                status: 'active',
+                createdAt: new Date()
+              });
+          }
+        }
+
+        return [user];
+      });
+
+      // Return the created user without sensitive information
+      const userResponse = {
+        id: newUser.id,
+        username: newUser.username,
+        role: newUser.role,
+        fullName: newUser.fullName,
+        email: newUser.email,
+        createdAt: newUser.createdAt
+      };
+
+      res.status(201).json(userResponse);
     } catch (error) {
       console.error("Error creating user:", error);
-      res.status(500).send("Failed to create user");
+      res.status(500).json({
+        message: "Failed to create user",
+        error: (error as Error).message
+      });
     }
   });
 
@@ -265,7 +313,7 @@ export function registerRoutes(app: Express): Server {
       priority,
       estimatedHours,
       budget,
-      clientId // Added for admin project creation
+      clientId
     } = req.body;
     const user = req.user as any;
 
@@ -843,7 +891,7 @@ export function registerRoutes(app: Express): Server {
         .limit(1);
 
       if (existingAdmin) {
-        return res.status(400).send("Admin user already exists");
+        returnres.status(400).send("Admin user already exists");
       }
 
       const { username, password } = req.body;
