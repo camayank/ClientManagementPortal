@@ -1,7 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketService } from "./websocket/server";
-import { setupAuth, hashPassword } from "./auth";
+import { setupAuth } from "./auth";
+import clientRouter from "./routes/client";
 import { db } from "@db";
 import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles, clientOnboarding, servicePackages, clientServices, clientOnboardingDocuments, clientCommunications, serviceFeatureTiers, serviceFeatures, customPricingRules, tasks, taskCategories, taskDependencies, taskStatusHistory, insertTaskSchema, insertTaskCategorySchema } from "@db/schema";
 import multer from "multer";
@@ -23,6 +24,10 @@ export let wsService: WebSocketService;
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
+
+  // Register client routes
+  app.use("/api/client", clientRouter);
+
   const httpServer = createServer(app);
   wsService = new WebSocketService(httpServer);
 
@@ -898,8 +903,7 @@ export function registerRoutes(app: Express): Server {
       }
 
       const [updatedTier] = await db.update(serviceFeatureTiers)
-        .set({
-          name,
+        .set({          name,
           description,
           level,
           updatedAt: new Date()
