@@ -156,9 +156,12 @@ export default function UserDialog({ open, onOpenChange }: UserDialogProps) {
 
             <div className="grid gap-2">
               <Label htmlFor="role">Role</Label>
-              <Select onValueChange={(value) => form.setValue("role", value as any)}>
+              <Select 
+                onValueChange={(value) => form.setValue("role", value as any)}
+                defaultValue={form.getValues("role")}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select role" />
+                  <SelectValue placeholder="Select a role" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="administrator">Administrator</SelectItem>
