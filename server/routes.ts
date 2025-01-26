@@ -1338,5 +1338,79 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // User Role Management Routes
+  app.get("/api/admin/users/roles", requirePermission('users:read'), async (req, res) => {
+    try {
+      const usersList = await db
+        .select({
+          id: users.id,
+          username: users.username,
+          fullName: users.fullName,
+          email: users.email,
+          lastLogin: users.lastLogin,
+          createdAt: users.createdAt,
+          roles: roles,
+        })
+        .from(users)
+        .leftJoin(userRoles, eq(users.id, userRoles.userId))
+        .leftJoin(roles, eq(userRoles.roleId, roles.id));
+
+      // Group roles by user
+      const groupedUsers = usersList.reduce((acc, curr) => {
+        const user = acc.find(u => u.id === curr.id);
+        if (user) {
+          if (curr.roles) {
+            user.roles.push(curr.roles);
+          }
+        } else {
+          acc.push({
+            id: curr.id,
+            username: curr.username,
+            fullName: curr.fullName,
+            email: curr.email,
+            lastLogin: curr.lastLogin,
+            createdAt: curr.createdAt,
+            roles: curr.roles ? [curr.roles] : [],
+          });
+        }
+        return acc;
+      }, [] as any[]);
+
+      res.json(groupedUsers);
+    } catch (error) {
+      console.error("Error fetching users with roles:", error);
+      res.status(500).send("Failed to fetch users with roles");
+    }
+  });
+
+  app.patch("/api/admin/users/:id/roles", requirePermission('users:update'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { roleIds } = req.body;
+
+      // Remove existing roles
+      await db
+        .delete(userRoles)
+        .where(eq(userRoles.userId, parseInt(id)));
+
+      // Add new roles
+      if (roleIds?.length) {
+        await db
+          .insert(userRoles)
+          .values(
+            roleIds.map((roleId: number) => ({
+              userId: parseInt(id),
+              roleId: roleId,
+            }))
+          );
+      }
+
+      res.json({ message: "User roles updated successfully" });
+    } catch (error) {
+      console.error("Error updating user roles:", error);
+      res.status(500).send("Failed to update user roles");
+    }
+  });
+
   return httpServer;
 }
