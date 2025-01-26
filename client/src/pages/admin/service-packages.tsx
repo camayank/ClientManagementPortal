@@ -18,7 +18,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
@@ -38,7 +37,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Package2, Plus, Settings2, ArrowUpDown, ListChecks } from "lucide-react";
+import { Package2, Plus, Settings2, ArrowUpDown, ListChecks, Printer, Check, X } from "lucide-react";
 import type {
   ServicePackage,
   ServiceFeature,
@@ -46,6 +45,22 @@ import type {
   CustomPricingRule
 } from "@db/schema";
 import { FeatureTierDialog } from "@/components/feature-tier-dialog";
+
+// Helper functions for package comparison
+function getAllFeatures(packages: ServicePackage[] | undefined): string[] {
+  if (!packages) return [];
+  const featureSet = new Set<string>();
+  packages.forEach(pkg => {
+    if (Array.isArray(pkg.features)) {
+      pkg.features.forEach(feature => featureSet.add(feature));
+    }
+  });
+  return Array.from(featureSet).sort();
+}
+
+function isFeatureIncluded(pkg: ServicePackage, feature: string): boolean {
+  return Array.isArray(pkg.features) && pkg.features.includes(feature);
+}
 
 interface PackageFormData extends Omit<ServicePackage, 'id' | 'createdAt' | 'updatedAt'> {
   features: string[];
@@ -55,9 +70,12 @@ export default function ServicePackages() {
   const [selectedPackage, setSelectedPackage] = useState<ServicePackage | null>(null);
   const [isNewPackageDialogOpen, setIsNewPackageDialogOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("packages");
-  const { toast } = useToast();
   const [isFeatureTierDialogOpen, setIsFeatureTierDialogOpen] = useState(false);
   const [selectedTier, setSelectedTier] = useState<ServiceFeatureTier | null>(null);
+  const [isNewPricingRuleDialogOpen, setIsNewPricingRuleDialogOpen] = useState(false);
+  const [selectedPricingRule, setSelectedPricingRule] = useState<CustomPricingRule | null>(null);
+  const { toast } = useToast();
+
 
   const { data: packages, isLoading: packagesLoading } = useQuery<ServicePackage[]>({
     queryKey: ["/api/admin/service-packages"],
@@ -173,6 +191,7 @@ export default function ServicePackages() {
       await createPackageMutation.mutateAsync(formData);
     }
   };
+
 
   return (
     <AdminLayout>
@@ -348,25 +367,127 @@ export default function ServicePackages() {
 
           <TabsContent value="pricing">
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle>Custom Pricing Rules</CardTitle>
+                <Button onClick={() => setIsNewPricingRuleDialogOpen(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  New Rule
+                </Button>
               </CardHeader>
               <CardContent>
-                {/* Pricing rules management interface */}
+                <div className="space-y-4">
+                  {rulesLoading ? (
+                    <div className="flex justify-center py-8">
+                      <span className="loading loading-spinner"></span>
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Package</TableHead>
+                          <TableHead>Condition</TableHead>
+                          <TableHead>Adjustment</TableHead>
+                          <TableHead>Priority</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {pricingRules?.map((rule) => (
+                          <TableRow key={rule.id}>
+                            <TableCell className="font-medium">{rule.name}</TableCell>
+                            <TableCell>
+                              {packages?.find(p => p.id === rule.packageId)?.name || 'Unknown Package'}
+                            </TableCell>
+                            <TableCell>{rule.condition}</TableCell>
+                            <TableCell>{rule.adjustment}</TableCell>
+                            <TableCell>{rule.priority}</TableCell>
+                            <TableCell>
+                              <Badge
+                                className={
+                                  rule.isActive
+                                    ? "bg-green-100 text-green-800"
+                                    : "bg-gray-100 text-gray-800"
+                                }
+                              >
+                                {rule.isActive ? "Active" : "Inactive"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="outline"
+                                onClick={() => {
+                                  setSelectedPricingRule(rule);
+                                  setIsNewPricingRuleDialogOpen(true);
+                                }}
+                              >
+                                Edit
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="comparison">
             <Card>
-              <CardHeader>
-                <CardTitle>Package Comparison</CardTitle>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle>Package Comparison Matrix</CardTitle>
+                <Button onClick={() => window.print()} variant="outline">
+                  <Printer className="w-4 h-4 mr-2" />
+                  Print Comparison
+                </Button>
               </CardHeader>
               <CardContent>
-                {/* Package comparison matrix */}
+                <div className="space-y-4">
+                  {packagesLoading ? (
+                    <div className="flex justify-center py-8">
+                      <span className="loading loading-spinner"></span>
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Feature</TableHead>
+                          {packages?.map((pkg) => (
+                            <TableHead key={pkg.id} className="text-center">
+                              {pkg.name}
+                              <div className="text-sm text-muted-foreground">
+                                ${pkg.basePrice}/{pkg.billingCycle}
+                              </div>
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {getAllFeatures(packages).map((feature) => (
+                          <TableRow key={feature}>
+                            <TableCell className="font-medium">{feature}</TableCell>
+                            {packages?.map((pkg) => (
+                              <TableCell key={pkg.id} className="text-center">
+                                {isFeatureIncluded(pkg, feature) ? (
+                                  <Check className="mx-auto h-4 w-4 text-green-500" />
+                                ) : (
+                                  <X className="mx-auto h-4 w-4 text-red-500" />
+                                )}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
+
         </Tabs>
 
         <Dialog
