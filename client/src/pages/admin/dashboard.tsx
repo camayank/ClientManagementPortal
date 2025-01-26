@@ -1,14 +1,17 @@
 import { AdminLayout } from "@/components/layouts/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { 
-  Users, 
-  FolderKanban, 
+import {
+  Users,
+  FolderKanban,
   Activity,
   FileText,
   UserCheck,
-  AlertTriangle
+  AlertTriangle,
+  Settings
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
 
 export default function AdminDashboard() {
   const { data: stats } = useQuery({
@@ -18,7 +21,23 @@ export default function AdminDashboard() {
   return (
     <AdminLayout>
       <div className="space-y-6">
-        <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+        <div className="flex justify-between items-center">
+          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+          <div className="flex gap-4">
+            <Button variant="outline" asChild>
+              <Link href="/admin/roles">
+                <Settings className="mr-2 h-4 w-4" />
+                Role Management
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/admin/user-roles">
+                <Users className="mr-2 h-4 w-4" />
+                User Role Assignment
+              </Link>
+            </Button>
+          </div>
+        </div>
 
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
