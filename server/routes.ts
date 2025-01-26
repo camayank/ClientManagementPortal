@@ -658,7 +658,6 @@ export function registerRoutes(app: Express): Server {
   });
 
 
-
   app.get("/api/admin/reports", requirePermission('reports', 'read'), async (req, res) => {
     const { type, startDate, endDate } = req.query;
     if (!startDate || !endDate) {
@@ -846,7 +845,6 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-
   app.get("/api/admin/service-feature-tiers", requirePermission('packages', 'read'), async (req, res) => {
     try {
       const tiers = await db.select().from(serviceFeatureTiers);
@@ -893,20 +891,80 @@ export function registerRoutes(app: Express): Server {
       const { id } = req.params;
       const { name, description, level } = req.body;
 
+      if (!name || typeof level !== 'number') {
+        return res.status(400).json({
+          message: "Name and level are required"
+        });
+      }
+
       const [updatedTier] = await db.update(serviceFeatureTiers)
         .set({
           name,
           description,
           level,
+          updatedAt: new Date()
         })
         .where(eq(serviceFeatureTiers.id, parseInt(id)))
         .returning();
+
+      if (!updatedTier) {
+        return res.status(404).json({
+          message: "Feature tier notfound"
+        });
+      }
 
       res.json(updatedTier);
     } catch (error) {
       console.error("Error updating feature tier:", error);
       res.status(500).json({
-        message: "Failed to update feature tier",        error: (error as Error).message
+        message: "Failed to update feature tier",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.delete("/api/admin/service-feature-tiers/:id", requirePermission('packages', 'delete'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const [deletedTier] = await db.delete(serviceFeatureTiers)
+        .where(eq(serviceFeatureTiers.id, parseInt(id)))
+        .returning();
+
+      if (!deletedTier) {
+        return res.status(404).json({
+          message: "Feature tier not found"
+        });
+      }
+
+      res.json({ message: "Feature tier deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting feature tier:", error);
+      res.status(500).json({
+        message: "Failed to delete feature tier",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.delete("/api/admin/pricing-rules/:id", requirePermission('packages', 'delete'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const [deletedRule] = await db.delete(customPricingRules)
+        .where(eq(customPricingRules.id, parseInt(id)))
+        .returning();
+
+      if (!deletedRule) {
+        return res.status(404).json({
+          message: "Pricing rule not found"
+        });
+      }
+
+      res.json({ message: "Pricing rule deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting pricing rule:", error);
+      res.status(500).json({
+        message: "Failed to delete pricing rule",
+        error: (error as Error).message
       });
     }
   });

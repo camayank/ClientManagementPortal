@@ -6,11 +6,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ServiceFeatureTier } from "@db/schema";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Trash2 } from "lucide-react";
 
 interface FeatureTierDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  selectedTier?: ServiceFeatureTier;
+  selectedTier?: ServiceFeatureTier | null;
 }
 
 export function FeatureTierDialog({
@@ -20,6 +22,7 @@ export function FeatureTierDialog({
 }: FeatureTierDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const createMutation = useMutation({
     mutationFn: async (formData: FormData) => {
@@ -85,6 +88,37 @@ export function FeatureTierDialog({
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await fetch(`/api/admin/service-feature-tiers/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Feature tier deleted successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/service-feature-tiers"] });
+      onOpenChange(false);
+      setShowDeleteDialog(false);
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message,
+      });
+    },
+  });
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -99,13 +133,45 @@ export function FeatureTierDialog({
     }
   };
 
+  const handleDelete = async () => {
+    if (selectedTier) {
+      await deleteMutation.mutateAsync(selectedTier.id);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            {selectedTier ? "Edit Feature Tier" : "New Feature Tier"}
-          </DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle>
+              {selectedTier ? "Edit Feature Tier" : "New Feature Tier"}
+            </DialogTitle>
+            {selectedTier && (
+              <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" size="icon">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This action cannot be undone. This will permanently delete the
+                      feature tier and remove it from all associated packages.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleDelete}>
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+          </div>
           <DialogDescription>
             {selectedTier
               ? "Update the feature tier details"
@@ -140,7 +206,7 @@ export function FeatureTierDialog({
             </div>
           </div>
           <DialogFooter>
-            <Button type="submit">
+            <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending || deleteMutation.isPending}>
               {selectedTier ? "Update Tier" : "Create Tier"}
             </Button>
           </DialogFooter>

@@ -193,6 +193,13 @@ export default function ServicePackages() {
     }
   };
 
+  const handleComparePricing = () => {
+    setActiveTab("comparison");
+  };
+
+  const handleManagePricingRules = () => {
+    setActiveTab("pricing");
+  };
 
   return (
     <AdminLayout>
@@ -205,6 +212,14 @@ export default function ServicePackages() {
             </p>
           </div>
           <div className="flex gap-2">
+            <Button onClick={handleComparePricing} variant="outline">
+              <ArrowUpDown className="w-4 h-4 mr-2" />
+              Compare Packages
+            </Button>
+            <Button onClick={handleManagePricingRules} variant="outline">
+              <Settings2 className="w-4 h-4 mr-2" />
+              Pricing Rules
+            </Button>
             <Button onClick={() => setIsNewPackageDialogOpen(true)}>
               <Plus className="w-4 h-4 mr-2" />
               New Package

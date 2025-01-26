@@ -7,11 +7,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { CustomPricingRule, ServicePackage } from "@db/schema";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Trash2 } from "lucide-react";
 
 interface PricingRuleDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  selectedRule?: CustomPricingRule;
+  selectedRule?: CustomPricingRule | null;
   packages?: ServicePackage[];
 }
 
@@ -23,6 +25,7 @@ export function PricingRuleDialog({
 }: PricingRuleDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const createMutation = useMutation({
     mutationFn: async (formData: FormData) => {
@@ -88,6 +91,37 @@ export function PricingRuleDialog({
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await fetch(`/api/admin/pricing-rules/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Pricing rule deleted successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/pricing-rules"] });
+      onOpenChange(false);
+      setShowDeleteDialog(false);
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message,
+      });
+    },
+  });
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
@@ -102,13 +136,45 @@ export function PricingRuleDialog({
     }
   };
 
+  const handleDelete = async () => {
+    if (selectedRule) {
+      await deleteMutation.mutateAsync(selectedRule.id);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            {selectedRule ? "Edit Pricing Rule" : "New Pricing Rule"}
-          </DialogTitle>
+          <div className="flex items-center justify-between">
+            <DialogTitle>
+              {selectedRule ? "Edit Pricing Rule" : "New Pricing Rule"}
+            </DialogTitle>
+            {selectedRule && (
+              <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" size="icon">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This action cannot be undone. This will permanently delete the
+                      pricing rule from the system.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleDelete}>
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+          </div>
           <DialogDescription>
             {selectedRule
               ? "Update the pricing rule details"
@@ -155,7 +221,7 @@ export function PricingRuleDialog({
               <label>Condition</label>
               <Input
                 name="condition"
-                defaultValue={selectedRule?.condition}
+                defaultValue={selectedRule?.condition?.toString()}
                 required
                 placeholder="e.g., quantity > 10"
               />
@@ -164,7 +230,7 @@ export function PricingRuleDialog({
               <label>Adjustment</label>
               <Input
                 name="adjustment"
-                defaultValue={selectedRule?.adjustment}
+                defaultValue={selectedRule?.adjustment?.toString()}
                 required
                 placeholder="e.g., -10% or +50"
               />
@@ -180,7 +246,7 @@ export function PricingRuleDialog({
             </div>
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
+            <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending || deleteMutation.isPending}>
               {selectedRule ? "Update Rule" : "Create Rule"}
             </Button>
           </DialogFooter>
