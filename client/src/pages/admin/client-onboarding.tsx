@@ -46,6 +46,10 @@ import {
 } from "lucide-react";
 import type { ClientOnboarding, ClientOnboardingDocument } from "@db/schema";
 import { Progress } from "@/components/ui/progress";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 
 const ONBOARDING_STEPS = [
   "initial_contact",
@@ -128,12 +132,31 @@ const REQUIRED_DOCUMENTS = [
   "Client Information Form",
 ];
 
+const newClientSchema = z.object({
+  company: z.string().min(1, "Company name is required"),
+  email: z.string().email("Invalid email address"),
+  contactPerson: z.string().min(1, "Contact person is required"),
+  phone: z.string().min(1, "Phone number is required"),
+});
+
+type NewClientFormData = z.infer<typeof newClientSchema>;
+
 export default function ClientOnboarding() {
   const [selectedClient, setSelectedClient] = useState<ClientOnboarding | null>(null);
   const [showRequirements, setShowRequirements] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
   const [showNewClient, setShowNewClient] = useState(false);
   const { toast } = useToast();
+
+  const form = useForm<NewClientFormData>({
+    resolver: zodResolver(newClientSchema),
+    defaultValues: {
+      company: "",
+      email: "",
+      contactPerson: "",
+      phone: "",
+    },
+  });
 
   const { data: onboardingClients, isLoading, refetch } = useQuery<ClientOnboarding[]>({
     queryKey: ["/api/admin/client-onboarding"],
@@ -201,6 +224,38 @@ export default function ClientOnboarding() {
     }
   };
 
+  const onSubmit = async (data: NewClientFormData) => {
+    try {
+      const response = await fetch("/api/admin/client-onboarding", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      toast({
+        title: "Success",
+        description: "New client onboarding started successfully",
+      });
+
+      form.reset();
+      setShowNewClient(false);
+      refetch();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message,
+      });
+    }
+  };
+
   const getStepBadge = (step: string) => {
     switch (step) {
       case "completed":
@@ -250,36 +305,76 @@ export default function ClientOnboarding() {
               </Button>
             </DialogTrigger>
             <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Add New Client</DialogTitle>
-                <DialogDescription>
-                  Start the onboarding process for a new client
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium">Company Name</label>
-                  <Input placeholder="Enter company name" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Email</label>
-                  <Input type="email" placeholder="company@example.com" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Contact Person</label>
-                  <Input placeholder="Full name" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Phone</label>
-                  <Input type="tel" placeholder="Phone number" />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setShowNewClient(false)}>
-                  Cancel
-                </Button>
-                <Button>Start Onboarding</Button>
-              </DialogFooter>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)}>
+                  <DialogHeader>
+                    <DialogTitle>Add New Client</DialogTitle>
+                    <DialogDescription>
+                      Start the onboarding process for a new client
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <FormField
+                      control={form.control}
+                      name="company"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Company Name</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Enter company name" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl>
+                            <Input type="email" placeholder="company@example.com" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="contactPerson"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Contact Person</FormLabel>
+                          <FormControl>
+                            <Input placeholder="Full name" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="phone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Phone</FormLabel>
+                          <FormControl>
+                            <Input type="tel" placeholder="Phone number" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" type="button" onClick={() => setShowNewClient(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="submit">Start Onboarding</Button>
+                  </DialogFooter>
+                </form>
+              </Form>
             </DialogContent>
           </Dialog>
         </div>
@@ -306,7 +401,7 @@ export default function ClientOnboarding() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {onboardingClients?.filter(c => 
+                  {onboardingClients?.filter((c) =>
                     new Date(c.startedAt).getMonth() === new Date().getMonth()
                   ).length || 0}
                 </div>
@@ -320,8 +415,8 @@ export default function ClientOnboarding() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {onboardingClients?.filter(c => 
-                    c.currentStep === 'completed' &&
+                  {onboardingClients?.filter((c) =>
+                    c.currentStep === "completed" &&
                     new Date(c.completedAt).getMonth() === new Date().getMonth()
                   ).length || 0}
                 </div>
@@ -376,9 +471,9 @@ export default function ClientOnboarding() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <Progress 
-                              value={calculateProgress(client)} 
-                              className="w-[60px]" 
+                            <Progress
+                              value={calculateProgress(client)}
+                              className="w-[60px]"
                             />
                             <span className="text-sm text-muted-foreground">
                               {Math.round(calculateProgress(client))}%
@@ -421,7 +516,9 @@ export default function ClientOnboarding() {
                           </Button>
                         </TableCell>
                         <TableCell>
-                          {client.startedAt ? new Date(client.startedAt).toLocaleDateString() : 'N/A'}
+                          {client.startedAt
+                            ? new Date(client.startedAt).toLocaleDateString()
+                            : "N/A"}
                         </TableCell>
                         <TableCell>
                           {client.assignedUser?.username || "Unassigned"}
