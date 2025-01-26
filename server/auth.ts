@@ -6,7 +6,7 @@ import { Strategy as LinkedInStrategy } from "passport-linkedin-oauth2";
 import { type Express } from "express";
 import session from "express-session";
 import createMemoryStore from "memorystore";
-import { users, roles, userRoles, type User } from "@db/schema";
+import { users, roles, userRoles, type SelectUser } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -36,19 +36,6 @@ const mfaVerifySchema = z.object({
   token: z.string()
 });
 
-// Extended User type with MFA and roles
-type AuthUser = Omit<User, 'password'> & {
-  roles?: string[];
-  mfaEnabled?: boolean;
-  mfaSecret?: string;
-};
-
-declare global {
-  namespace Express {
-    interface User extends AuthUser {}
-  }
-}
-
 // Helper functions
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, SALT_ROUNDS);
@@ -63,7 +50,7 @@ export async function comparePassword(password: string, hash: string): Promise<b
   }
 }
 
-function generateTokens(user: AuthUser) {
+function generateTokens(user: Express.User) {
   const accessToken = jwt.sign({ id: user.id, roles: user.roles }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
   const refreshToken = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
   return { accessToken, refreshToken };
@@ -76,11 +63,11 @@ export function setupAuth(app: Express) {
     resave: false,
     saveUninitialized: false,
     cookie: {
-      maxAge: 24 * 60 * 60 * 1000,
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
       secure: app.get("env") === "production",
     },
     store: new MemoryStore({
-      checkPeriod: 86400000,
+      checkPeriod: 86400000, // 24 hours
     }),
   };
 
@@ -141,12 +128,9 @@ export function setupAuth(app: Express) {
         .innerJoin(roles, eq(userRoles.roleId, roles.id))
         .where(eq(userRoles.userId, user.id));
 
-      const userForSession: AuthUser = {
-        id: user.id,
-        username: user.username,
-        role: user.role,
+      const userWithRoles = {
+        ...user,
         roles: userRolesData.map(r => r.roleName),
-        mfaEnabled: user.mfaEnabled,
       };
 
       // Update last login timestamp
@@ -154,11 +138,264 @@ export function setupAuth(app: Express) {
         .set({ lastLogin: new Date() })
         .where(eq(users.id, user.id));
 
-      return done(null, userForSession);
+      return done(null, userWithRoles);
     } catch (err) {
       return done(err);
     }
   }));
+
+  passport.serializeUser((user: Express.User, done) => {
+    done(null, user.id);
+  });
+
+  passport.deserializeUser(async (id: number, done) => {
+    try {
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, id))
+        .limit(1);
+
+      if (!user) {
+        return done(null, false);
+      }
+
+      const userRolesData = await db
+        .select({
+          roleName: roles.name,
+        })
+        .from(userRoles)
+        .innerJoin(roles, eq(userRoles.roleId, roles.id))
+        .where(eq(userRoles.userId, user.id));
+
+      const userWithRoles = {
+        ...user,
+        roles: userRolesData.map(r => r.roleName),
+      };
+
+      done(null, userWithRoles);
+    } catch (err) {
+      done(err);
+    }
+  });
+
+  // Auth routes
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const result = userInputSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({
+          message: "Validation failed",
+          errors: result.error.issues
+        });
+      }
+
+      const { username, password, role } = result.data;
+
+      // Check if user exists
+      const [existingUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
+
+      if (existingUser) {
+        return res.status(400).json({
+          message: "Username already exists"
+        });
+      }
+
+      // Hash password
+      const hashedPassword = await hashPassword(password);
+
+      // Create user
+      const [newUser] = await db.insert(users)
+        .values({
+          username,
+          password: hashedPassword,
+          role,
+          createdAt: new Date(),
+        })
+        .returning();
+
+      // Get the role ID
+      const [roleRecord] = await db
+        .select()
+        .from(roles)
+        .where(eq(roles.name, role))
+        .limit(1);
+
+      if (roleRecord) {
+        // Assign role to user
+        await db.insert(userRoles)
+          .values({
+            userId: newUser.id,
+            roleId: roleRecord.id
+          });
+      }
+
+      res.status(201).json({
+        message: "Registration successful",
+        user: {
+          id: newUser.id,
+          username: newUser.username,
+          role: newUser.role
+        }
+      });
+    } catch (error) {
+      console.error("Registration error:", error);
+      res.status(500).json({
+        message: "Registration failed",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.post("/api/auth/login", (req, res, next) => {
+    passport.authenticate("local", async (err: any, user: Express.User | false, info: any) => {
+      if (err) {
+        return next(err);
+      }
+
+      if (!user) {
+        return res.status(400).send(info.message ?? "Login failed");
+      }
+
+      if (user.mfaEnabled) {
+        // Return a temporary token for MFA verification
+        const tempToken = jwt.sign(
+          { id: user.id, temp: true },
+          JWT_SECRET,
+          { expiresIn: '5m' }
+        );
+        return res.json({ 
+          requiresMfa: true,
+          tempToken
+        });
+      }
+
+      req.logIn(user, (err) => {
+        if (err) {
+          return next(err);
+        }
+
+        const tokens = generateTokens(user);
+        return res.json({
+          user: {
+            id: user.id,
+            username: user.username,
+            role: user.role,
+            roles: user.roles,
+          },
+          ...tokens
+        });
+      });
+    })(req, res, next);
+  });
+
+  app.post("/api/auth/refresh", (req, res) => {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).send("Refresh token required");
+    }
+
+    try {
+      const payload = jwt.verify(refreshToken, JWT_SECRET) as { id: number };
+      const tokens = generateTokens({ id: payload.id } as Express.User);
+      res.json(tokens);
+    } catch (error) {
+      res.status(401).send("Invalid refresh token");
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.logout((err) => {
+      if (err) {
+        return res.status(500).send("Logout failed");
+      }
+      res.json({ message: "Logout successful" });
+    });
+  });
+
+  // MFA routes
+  app.post("/api/auth/mfa/setup", async (req, res) => {
+    if (!req.user) {
+      return res.status(401).send("Not authenticated");
+    }
+
+    const secret = speakeasy.generateSecret();
+    const otpAuthUrl = speakeasy.otpauthURL({
+      secret: secret.base32,
+      label: req.user.username,
+      issuer: 'ClientPortal'
+    });
+
+    try {
+      const qrCode = await QRCode.toDataURL(otpAuthUrl);
+
+      // Store the secret temporarily
+      await db.update(users)
+        .set({ 
+          mfaSecret: secret.base32,
+          mfaEnabled: false 
+        })
+        .where(eq(users.id, req.user.id));
+
+      res.json({ 
+        qrCode,
+        secret: secret.base32
+      });
+    } catch (error) {
+      console.error('MFA setup error:', error);
+      res.status(500).send("Failed to setup MFA");
+    }
+  });
+
+  // MFA Verify endpoint
+  app.post("/api/auth/mfa/verify", async (req, res) => {
+    if (!req.user) {
+      return res.status(401).send("Not authenticated");
+    }
+
+    const result = mfaVerifySchema.safeParse(req.body);
+    if (!result.success) {
+      return res.status(400).send(result.error.message);
+    }
+
+    const { token } = result.data;
+
+    try {
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, req.user.id))
+        .limit(1);
+
+      if (!user.mfaSecret) {
+        return res.status(400).send("MFA not set up");
+      }
+
+      const verified = speakeasy.totp.verify({
+        secret: user.mfaSecret,
+        encoding: 'base32',
+        token
+      });
+
+      if (verified) {
+        await db.update(users)
+          .set({ mfaEnabled: true })
+          .where(eq(users.id, req.user.id));
+
+        res.json({ message: "MFA verified and enabled" });
+      } else {
+        res.status(400).send("Invalid token");
+      }
+    } catch (error) {
+      console.error('MFA verification error:', error);
+      res.status(500).send("Failed to verify MFA");
+    }
+  });
 
   // Social login strategies
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
@@ -232,124 +469,22 @@ export function setupAuth(app: Express) {
     }));
   }
 
-  passport.serializeUser((user: Express.User, done) => {
-    done(null, user.id);
-  });
-
-  passport.deserializeUser(async (id: number, done) => {
-    try {
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, id))
-        .limit(1);
-
-      if (!user) {
-        return done(null, false);
-      }
-
-      const userRolesData = await db
-        .select({
-          roleName: roles.name,
-        })
-        .from(userRoles)
-        .innerJoin(roles, eq(userRoles.roleId, roles.id))
-        .where(eq(userRoles.userId, user.id));
-
-      const userForSession: AuthUser = {
+  // Protected route example
+  app.get("/api/auth/user", (req, res) => {
+    if (req.isAuthenticated()) {
+      const user = req.user;
+      return res.json({
         id: user.id,
         username: user.username,
         role: user.role,
-        roles: userRolesData.map(r => r.roleName),
-        mfaEnabled: user.mfaEnabled,
-      };
-
-      done(null, userForSession);
-    } catch (err) {
-      done(err);
-    }
-  });
-
-  // MFA Setup endpoint
-  app.post("/api/auth/mfa/setup", async (req, res) => {
-    if (!req.user) {
-      return res.status(401).send("Not authenticated");
-    }
-
-    const secret = speakeasy.generateSecret();
-    const otpAuthUrl = speakeasy.otpauthURL({
-      secret: secret.base32,
-      label: req.user.username,
-      issuer: 'YourApp'
-    });
-
-    try {
-      const qrCode = await QRCode.toDataURL(otpAuthUrl);
-
-      // Store the secret temporarily
-      await db.update(users)
-        .set({ 
-          mfaSecret: secret.base32,
-          mfaEnabled: false 
-        })
-        .where(eq(users.id, req.user.id));
-
-      res.json({ 
-        qrCode,
-        secret: secret.base32
+        roles: user.roles,
+        mfaEnabled: user.mfaEnabled
       });
-    } catch (error) {
-      console.error('MFA setup error:', error);
-      res.status(500).send("Failed to setup MFA");
     }
+    res.status(401).send("Not authenticated");
   });
 
-  // MFA Verify endpoint
-  app.post("/api/auth/mfa/verify", async (req, res) => {
-    if (!req.user) {
-      return res.status(401).send("Not authenticated");
-    }
-
-    const result = mfaVerifySchema.safeParse(req.body);
-    if (!result.success) {
-      return res.status(400).send(result.error.message);
-    }
-
-    const { token } = result.data;
-
-    try {
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, req.user.id))
-        .limit(1);
-
-      if (!user.mfaSecret) {
-        return res.status(400).send("MFA not set up");
-      }
-
-      const verified = speakeasy.totp.verify({
-        secret: user.mfaSecret,
-        encoding: 'base32',
-        token
-      });
-
-      if (verified) {
-        await db.update(users)
-          .set({ mfaEnabled: true })
-          .where(eq(users.id, req.user.id));
-
-        res.json({ message: "MFA verified and enabled" });
-      } else {
-        res.status(400).send("Invalid token");
-      }
-    } catch (error) {
-      console.error('MFA verification error:', error);
-      res.status(500).send("Failed to verify MFA");
-    }
-  });
-
-  // Auth routes
+  // Auth routes (from original, but order adjusted for clarity)
   app.post("/api/auth/login", (req, res, next) => {
     passport.authenticate("local", async (err: any, user: Express.User | false, info: any) => {
       if (err) {
@@ -401,7 +536,7 @@ export function setupAuth(app: Express) {
 
     try {
       const payload = jwt.verify(refreshToken, JWT_SECRET) as { id: number };
-      const tokens = generateTokens({ id: payload.id } as AuthUser);
+      const tokens = generateTokens({ id: payload.id } as Express.User);
       res.json(tokens);
     } catch (error) {
       res.status(401).send("Invalid refresh token");
@@ -425,7 +560,7 @@ export function setupAuth(app: Express) {
   app.get('/auth/google/callback',
     passport.authenticate('google', { failureRedirect: '/login' }),
     (req, res) => {
-      const tokens = generateTokens(req.user as AuthUser);
+      const tokens = generateTokens(req.user as Express.User);
       res.redirect(`/auth/success?tokens=${encodeURIComponent(JSON.stringify(tokens))}`);
     }
   );
@@ -437,22 +572,8 @@ export function setupAuth(app: Express) {
   app.get('/auth/linkedin/callback',
     passport.authenticate('linkedin', { failureRedirect: '/login' }),
     (req, res) => {
-      const tokens = generateTokens(req.user as AuthUser);
+      const tokens = generateTokens(req.user as Express.User);
       res.redirect(`/auth/success?tokens=${encodeURIComponent(JSON.stringify(tokens))}`);
     }
   );
-
-  app.get("/api/auth/user", (req, res) => {
-    if (req.isAuthenticated()) {
-      const user = req.user;
-      return res.json({
-        id: user.id,
-        username: user.username,
-        role: user.role,
-        roles: user.roles,
-        mfaEnabled: user.mfaEnabled
-      });
-    }
-    res.status(401).send("Not authenticated");
-  });
 }

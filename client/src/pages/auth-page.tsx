@@ -7,64 +7,116 @@ import { useUser } from "@/hooks/use-user";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
-import type { NewUser } from "@db/schema";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { UserCircle2, Users } from "lucide-react";
+import { UserCircle2, Users, Lock, Mail } from "lucide-react";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { SiGoogle, SiLinkedin } from "react-icons/si";
 
-const passwordResetRequestSchema = z.object({
+// Form validation schemas
+const loginSchema = z.object({
   username: z.string().email("Please enter a valid email address"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
 });
 
-const passwordResetSchema = z.object({
-  token: z.string().min(1, "Token is required"),
-  newPassword: z.string().min(6, "Password must be at least 6 characters"),
-  confirmPassword: z.string().min(6, "Password must be at least 6 characters"),
-}).refine((data) => data.newPassword === data.confirmPassword, {
+const registerSchema = z.object({
+  username: z.string().email("Please enter a valid email address"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  confirmPassword: z.string(),
+}).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
   path: ["confirmPassword"],
 });
 
-type PasswordResetRequestForm = z.infer<typeof passwordResetRequestSchema>;
-type PasswordResetForm = z.infer<typeof passwordResetSchema>;
+const mfaSchema = z.object({
+  token: z.string().length(6, "Token must be 6 digits"),
+});
+
+type LoginForm = z.infer<typeof loginSchema>;
+type RegisterForm = z.infer<typeof registerSchema>;
+type MFAForm = z.infer<typeof mfaSchema>;
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
-  const [resetStep, setResetStep] = useState<'login' | 'request' | 'reset'>('login');
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [tempToken, setTempToken] = useState("");
   const { login, register } = useUser();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
-  const form = useForm<NewUser>({
+  const loginForm = useForm<LoginForm>({
+    resolver: zodResolver(loginSchema),
     defaultValues: {
       username: "",
       password: "",
-      role: "client",
     },
   });
 
-  const resetRequestForm = useForm<PasswordResetRequestForm>({
-    resolver: zodResolver(passwordResetRequestSchema),
+  const registerForm = useForm<RegisterForm>({
+    resolver: zodResolver(registerSchema),
     defaultValues: {
       username: "",
-    },
-  });
-
-  const resetForm = useForm<PasswordResetForm>({
-    resolver: zodResolver(passwordResetSchema),
-    defaultValues: {
-      token: "",
-      newPassword: "",
+      password: "",
       confirmPassword: "",
     },
   });
 
-  async function onSubmit(data: NewUser) {
+  const mfaForm = useForm<MFAForm>({
+    resolver: zodResolver(mfaSchema),
+    defaultValues: {
+      token: "",
+    },
+  });
+
+  async function handleLogin(data: LoginForm) {
     try {
-      // Admin users can only login, not register
-      if (showAdminLogin && !isLogin) {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: data.username,
+          password: data.password,
+          role: showAdminLogin ? "admin" : "client",
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        if (result.requiresMfa) {
+          setMfaRequired(true);
+          setTempToken(result.tempToken);
+          toast({
+            title: "MFA Required",
+            description: "Please enter your MFA code",
+          });
+        } else {
+          toast({
+            title: "Success",
+            description: "Login successful",
+          });
+          setLocation(showAdminLogin ? "/admin" : "/client");
+        }
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: result.message || "Login failed",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message,
+      });
+    }
+  }
+
+  async function handleRegister(data: RegisterForm) {
+    try {
+      if (showAdminLogin) {
         toast({
           variant: "destructive",
           title: "Error",
@@ -73,19 +125,65 @@ export default function AuthPage() {
         return;
       }
 
-      // Set role based on admin toggle
-      data.role = showAdminLogin ? "admin" : "client";
-      const result = await (isLogin ? login(data) : register(data));
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: data.username,
+          password: data.password,
+          role: "client",
+        }),
+      });
 
-      if (!result.ok) {
+      const result = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Registration successful. Please log in.",
+        });
+        setIsLogin(true);
+      } else {
         toast({
           variant: "destructive",
           title: "Error",
-          description: result.message,
+          description: result.message || "Registration failed",
         });
-      } else {
-        // Redirect based on role
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message,
+      });
+    }
+  }
+
+  async function handleMfaVerify(data: MFAForm) {
+    try {
+      const response = await fetch('/api/auth/mfa/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${tempToken}`,
+        },
+        body: JSON.stringify({ token: data.token }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "MFA verification successful",
+        });
         setLocation(showAdminLogin ? "/admin" : "/client");
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: result.message || "MFA verification failed",
+        });
       }
     } catch (error: any) {
       toast({
@@ -96,61 +194,8 @@ export default function AuthPage() {
     }
   }
 
-  async function onRequestPasswordReset(data: PasswordResetRequestForm) {
-    try {
-      const response = await fetch('/api/request-password-reset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-
-      toast({
-        title: "Check your email",
-        description: "If an account exists with this email, you will receive a password reset link.",
-      });
-
-      // In development, show the reset form directly
-      if (process.env.NODE_ENV === 'development') {
-        setResetStep('reset');
-      }
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message,
-      });
-    }
-  }
-
-  async function onResetPassword(data: PasswordResetForm) {
-    try {
-      const response = await fetch('/api/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-
-      toast({
-        title: "Success",
-        description: "Your password has been reset. Please login with your new password.",
-      });
-
-      setResetStep('login');
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: error.message,
-      });
-    }
+  function handleSocialLogin(provider: string) {
+    window.location.href = `/auth/${provider}`;
   }
 
   return (
@@ -160,7 +205,7 @@ export default function AuthPage() {
           <CardTitle className="text-2xl font-bold text-center">Welcome to CA4CPA</CardTitle>
         </CardHeader>
         <CardContent>
-          {resetStep === 'login' && (
+          {!mfaRequired ? (
             <>
               <div className="mb-6">
                 <Tabs 
@@ -183,162 +228,186 @@ export default function AuthPage() {
                 </Tabs>
               </div>
 
-              <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                  <FormField
-                    control={form.control}
-                    name="username"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="email" 
-                            placeholder="Enter your email" 
-                            {...field} 
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="password"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Password</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="password" 
-                            placeholder="Enter your password" 
-                            {...field} 
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <Button type="submit" className="w-full">
-                    {isLogin ? "Login" : "Create Account"}
-                  </Button>
+              {isLogin ? (
+                <Form {...loginForm}>
+                  <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-4">
+                    <FormField
+                      control={loginForm.control}
+                      name="username"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Mail className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                              <Input 
+                                type="email" 
+                                placeholder="Enter your email" 
+                                className="pl-10"
+                                {...field} 
+                              />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={loginForm.control}
+                      name="password"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Password</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                              <Input 
+                                type="password" 
+                                placeholder="Enter your password" 
+                                className="pl-10"
+                                {...field} 
+                              />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <Button type="submit" className="w-full">
+                      Login
+                    </Button>
+                  </form>
+                </Form>
+              ) : (
+                <Form {...registerForm}>
+                  <form onSubmit={registerForm.handleSubmit(handleRegister)} className="space-y-4">
+                    <FormField
+                      control={registerForm.control}
+                      name="username"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Mail className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                              <Input 
+                                type="email" 
+                                placeholder="Enter your email" 
+                                className="pl-10"
+                                {...field} 
+                              />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={registerForm.control}
+                      name="password"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Password</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                              <Input 
+                                type="password" 
+                                placeholder="Enter your password" 
+                                className="pl-10"
+                                {...field} 
+                              />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={registerForm.control}
+                      name="confirmPassword"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Confirm Password</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                              <Input 
+                                type="password" 
+                                placeholder="Confirm your password" 
+                                className="pl-10"
+                                {...field} 
+                              />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <Button type="submit" className="w-full">
+                      Create Account
+                    </Button>
+                  </form>
+                </Form>
+              )}
 
-                  {!showAdminLogin && (
+              {!showAdminLogin && (
+                <>
+                  <div className="mt-4">
                     <Button
                       type="button"
-                      variant="ghost"
-                      className="w-full"
-                      onClick={() => setIsLogin(!isLogin)}
+                      variant="outline"
+                      className="w-full mb-2"
+                      onClick={() => handleSocialLogin('google')}
                     >
-                      {isLogin ? "Need an account? Sign up" : "Already have an account? Login"}
+                      <SiGoogle className="mr-2 h-4 w-4" />
+                      Continue with Google
                     </Button>
-                  )}
-
-                  {isLogin && (
                     <Button
                       type="button"
-                      variant="link"
+                      variant="outline"
                       className="w-full"
-                      onClick={() => setResetStep('request')}
+                      onClick={() => handleSocialLogin('linkedin')}
                     >
-                      Forgot password?
+                      <SiLinkedin className="mr-2 h-4 w-4" />
+                      Continue with LinkedIn
                     </Button>
-                  )}
-
-                  <div className="text-center text-sm text-gray-500">
-                    {showAdminLogin 
-                      ? "Administrative access for managing clients and system" 
-                      : (isLogin 
-                        ? "Access your client portal to manage documents and projects"
-                        : "Create an account to start managing your documents and projects")}
                   </div>
-                </form>
-              </Form>
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full mt-4"
+                    onClick={() => setIsLogin(!isLogin)}
+                  >
+                    {isLogin ? "Need an account? Sign up" : "Already have an account? Login"}
+                  </Button>
+                </>
+              )}
+
+              <div className="text-center text-sm text-gray-500 mt-4">
+                {showAdminLogin 
+                  ? "Administrative access for managing clients and system" 
+                  : (isLogin 
+                    ? "Access your client portal to manage documents and projects"
+                    : "Create an account to start managing your documents and projects")}
+              </div>
             </>
-          )}
-
-          {resetStep === 'request' && (
-            <Form {...resetRequestForm}>
-              <form onSubmit={resetRequestForm.handleSubmit(onRequestPasswordReset)} className="space-y-4">
+          ) : (
+            <Form {...mfaForm}>
+              <form onSubmit={mfaForm.handleSubmit(handleMfaVerify)} className="space-y-4">
                 <FormField
-                  control={resetRequestForm.control}
-                  name="username"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <Input 
-                          type="email" 
-                          placeholder="Enter your email" 
-                          {...field} 
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <Button type="submit" className="w-full">
-                  Reset Password
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="w-full"
-                  onClick={() => setResetStep('login')}
-                >
-                  Back to Login
-                </Button>
-              </form>
-            </Form>
-          )}
-
-          {resetStep === 'reset' && (
-            <Form {...resetForm}>
-              <form onSubmit={resetForm.handleSubmit(onResetPassword)} className="space-y-4">
-                <FormField
-                  control={resetForm.control}
+                  control={mfaForm.control}
                   name="token"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Reset Token</FormLabel>
+                      <FormLabel>MFA Code</FormLabel>
                       <FormControl>
                         <Input 
-                          placeholder="Enter the reset token from your email" 
+                          placeholder="Enter 6-digit code" 
                           {...field} 
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={resetForm.control}
-                  name="newPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>New Password</FormLabel>
-                      <FormControl>
-                        <Input 
-                          type="password" 
-                          placeholder="Enter your new password" 
-                          {...field} 
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={resetForm.control}
-                  name="confirmPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Confirm Password</FormLabel>
-                      <FormControl>
-                        <Input 
-                          type="password" 
-                          placeholder="Confirm your new password" 
-                          {...field} 
+                          maxLength={6}
+                          className="text-center tracking-widest text-lg"
                         />
                       </FormControl>
                       <FormMessage />
@@ -346,13 +415,16 @@ export default function AuthPage() {
                   )}
                 />
                 <Button type="submit" className="w-full">
-                  Set New Password
+                  Verify
                 </Button>
                 <Button
                   type="button"
                   variant="ghost"
                   className="w-full"
-                  onClick={() => setResetStep('login')}
+                  onClick={() => {
+                    setMfaRequired(false);
+                    setTempToken("");
+                  }}
                 >
                   Back to Login
                 </Button>
