@@ -3,9 +3,9 @@ import { createServer, type Server } from "http";
 import { WebSocketService } from "./websocket/server";
 import { setupAuth, hashPassword } from "./auth";
 import { db } from "@db";
-import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles, clientOnboarding, servicePackages, clientServices, clientOnboardingDocuments, clientCommunications, serviceFeatureTiers, serviceFeatures, customPricingRules } from "@db/schema";
+import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles, clientOnboarding, servicePackages, clientServices, clientOnboardingDocuments, clientCommunications, serviceFeatureTiers, serviceFeatures, customPricingRules, tasks, taskCategories, taskDependencies, taskStatusHistory, insertTaskSchema, insertTaskCategorySchema } from "@db/schema";
 import multer from "multer";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql, desc, or } from "drizzle-orm";
 import { requirePermission } from "./middleware/check-permission";
 import crypto from 'crypto';
 import path from 'path';
@@ -1161,6 +1161,300 @@ export function registerRoutes(app: Express): Server {
       console.error("Error updating pricing rule:", error);
       res.status(500).json({
         message: "Failed to update pricing rule",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  // Task Categories
+  app.get("/api/task-categories", requirePermission('tasks', 'read'), async (req, res) => {
+    try {
+      const categories = await db.select().from(taskCategories);
+      res.json(categories);
+    } catch (error) {
+      console.error("Error fetching task categories:", error);
+      res.status(500).json({
+        message: "Failed to fetch task categories",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.post("/api/task-categories", requirePermission('tasks', 'create'), async (req, res) => {
+    try {
+      const result = insertTaskCategorySchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({
+          message: "Invalid input",
+          errors: result.error.issues
+        });
+      }
+
+      const [category] = await db.insert(taskCategories)
+        .values(result.data)
+        .returning();
+
+      res.status(201).json(category);
+    } catch (error) {
+      console.error("Error creating task category:", error);
+      res.status(500).json({
+        message: "Failed to create task category",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  // Tasks
+  app.get("/api/tasks", requirePermission('tasks', 'read'), async (req, res) => {
+    try {
+      const user = req.user as any;
+      let query = db.select({
+        id: tasks.id,
+        title: tasks.title,
+        description: tasks.description,
+        priority: tasks.priority,
+        status: tasks.status,
+        dueDate: tasks.dueDate,
+        estimatedHours: tasks.estimatedHours,
+        actualHours: tasks.actualHours,
+        createdAt: tasks.createdAt,
+        updatedAt: tasks.updatedAt,
+        completedAt: tasks.completedAt,
+        category: taskCategories,
+        assignedUser: users,
+        creator: {
+          id: users.id,
+          username: users.username,
+          fullName: users.fullName,
+        },
+      })
+        .from(tasks)
+        .leftJoin(taskCategories, eq(tasks.categoryId, taskCategories.id))
+        .leftJoin(users, eq(tasks.assignedTo, users.id))
+        .leftJoin(users, eq(tasks.createdBy, users.id));
+
+      // Filter based on user role
+      if (user.role !== 'admin') {
+        query = query.where(or(
+          eq(tasks.assignedTo, user.id),
+          eq(tasks.createdBy, user.id)
+        ));
+      }
+
+      const taskList = await query;
+      res.json(taskList);
+    } catch (error) {
+      console.error("Error fetching tasks:", error);
+      res.status(500).json({
+        message: "Failed to fetch tasks",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.post("/api/tasks", requirePermission('tasks', 'create'), async (req, res) => {
+    try {
+      const result = insertTaskSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({
+          message: "Invalid input",
+          errors: result.error.issues
+        });
+      }
+
+      const user = req.user as any;
+      const [task] = await db.insert(tasks)
+        .values({
+          ...result.data,
+          createdBy: user.id,
+          status: 'todo',
+        })
+        .returning();
+
+      // Create initial status history
+      await db.insert(taskStatusHistory)
+        .values({
+          taskId: task.id,
+          previousStatus: null,
+          newStatus: 'todo',
+          changedBy: user.id,
+          comment: 'Task created'
+        });
+
+      // Add dependencies if provided
+      if (req.body.dependencies && Array.isArray(req.body.dependencies)) {
+        await Promise.all(req.body.dependencies.map(depId =>
+          db.insert(taskDependencies)
+            .values({
+              taskId: task.id,
+              dependsOnTaskId: depId,
+            })
+        ));
+      }
+
+      if (task.assignedTo) {
+        wsService.sendToUser(task.assignedTo, {
+          type: 'notification',
+          payload: {
+            type: 'task_assigned',
+            message: `New task assigned to you: ${task.title}`,
+            task: {
+              id: task.id,
+              title: task.title,
+              priority: task.priority,
+              dueDate: task.dueDate,
+            }
+          }
+        });
+      }
+
+      res.status(201).json(task);
+    } catch (error) {
+      console.error("Error creating task:", error);
+      res.status(500).json({
+        message: "Failed to create task",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.patch("/api/tasks/:id/status", requirePermission('tasks', 'update'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status, comment } = req.body;
+      const user = req.user as any;
+
+      const [task] = await db.select()
+        .from(tasks)
+        .where(eq(tasks.id, parseInt(id)))
+        .limit(1);
+
+      if (!task) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+
+      // Update task status
+      const [updatedTask] = await db.update(tasks)
+        .set({
+          status,
+          updatedAt: new Date(),
+          completedAt: status === 'completed' ? new Date() : null,
+        })
+        .where(eq(tasks.id, parseInt(id)))
+        .returning();
+
+      // Record status change
+      await db.insert(taskStatusHistory)
+        .values({
+          taskId: parseInt(id),
+          previousStatus: task.status,
+          newStatus: status,
+          changedBy: user.id,
+          comment
+        });
+
+      // Notify assigned user if status changes
+      if (task.assignedTo) {
+        wsService.sendToUser(task.assignedTo, {
+          type: 'notification',
+          payload: {
+            type: 'task_status_updated',
+            message: `Task status updated to ${status}: ${task.title}`,
+            task: {
+              id: task.id,
+              title: task.title,
+              status,
+            }
+          }
+        });
+      }
+
+      res.json(updatedTask);
+    } catch (error) {
+      console.error("Error updating task status:", error);
+      res.status(500).json({
+        message: "Failed to update task status",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.patch("/api/tasks/:id/assign", requirePermission('tasks', 'update'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { assignedTo } = req.body;
+      const user = req.user as any;
+
+      const [task] = await db.select()
+        .from(tasks)
+        .where(eq(tasks.id, parseInt(id)))
+        .limit(1);
+
+      if (!task) {
+        return res.status(404).json({ message: "Task not found" });
+      }
+
+      // Update task assignment
+      const [updatedTask] = await db.update(tasks)
+        .set({
+          assignedTo,
+          updatedAt: new Date(),
+        })
+        .where(eq(tasks.id, parseInt(id)))
+        .returning();
+
+      // Notify the newly assigned user
+      if (assignedTo) {
+        wsService.sendToUser(assignedTo, {
+          type: 'notification',
+          payload: {
+            type: 'task_assigned',
+            message: `Task assigned to you: ${task.title}`,
+            task: {
+              id: task.id,
+              title: task.title,
+              priority: task.priority,
+              dueDate: task.dueDate,
+            }
+          }
+        });
+      }
+
+      res.json(updatedTask);
+    } catch (error) {
+      console.error("Error assigning task:", error);
+      res.status(500).json({
+        message: "Failed to assign task",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.get("/api/tasks/:id/history", requirePermission('tasks', 'read'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const history = await db.select({
+        id: taskStatusHistory.id,
+        previousStatus: taskStatusHistory.previousStatus,
+        newStatus: taskStatusHistory.newStatus,
+        comment: taskStatusHistory.comment,
+        createdAt: taskStatusHistory.createdAt,
+        user: {
+          id: users.id,
+          username: users.username,
+          fullName: users.fullName,
+        },
+      })
+        .from(taskStatusHistory)
+        .leftJoin(users, eq(taskStatusHistory.changedBy, users.id))
+        .where(eq(taskStatusHistory.taskId, parseInt(id)))
+        .orderBy(desc(taskStatusHistory.createdAt));
+
+      res.json(history);
+    } catch (error) {
+      console.error("Error fetching task history:", error);
+      res.status(500).json({
+        message: "Failed to fetch task history",
         error: (error as Error).message
       });
     }

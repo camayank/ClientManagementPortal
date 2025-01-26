@@ -285,6 +285,52 @@ export const customPricingRules = pgTable("custom_pricing_rules", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Task Management System
+export const taskCategories = pgTable("task_categories", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  color: text("color"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const tasks = pgTable("tasks", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description"),
+  categoryId: integer("category_id").references(() => taskCategories.id),
+  assignedTo: integer("assigned_to").references(() => users.id),
+  createdBy: integer("created_by").references(() => users.id).notNull(),
+  priority: text("priority", { enum: ["low", "medium", "high", "urgent"] }).default("medium"),
+  status: text("status", {
+    enum: ["backlog", "todo", "in_progress", "in_review", "blocked", "completed"]
+  }).default("todo"),
+  dueDate: timestamp("due_date"),
+  estimatedHours: numeric("estimated_hours"),
+  actualHours: numeric("actual_hours"),
+  projectId: integer("project_id").references(() => projects.id),
+  parentTaskId: integer("parent_task_id").references(() => tasks.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+  completedAt: timestamp("completed_at"),
+});
+
+export const taskDependencies = pgTable("task_dependencies", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").references(() => tasks.id).notNull(),
+  dependsOnTaskId: integer("depends_on_task_id").references(() => tasks.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const taskStatusHistory = pgTable("task_status_history", {
+  id: serial("id").primaryKey(),
+  taskId: integer("task_id").references(() => tasks.id).notNull(),
+  previousStatus: text("previous_status"),
+  newStatus: text("new_status").notNull(),
+  changedBy: integer("changed_by").references(() => users.id).notNull(),
+  comment: text("comment"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
 
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
@@ -491,7 +537,6 @@ export const serviceTierFeaturesRelations = relations(serviceTierFeatures, ({ on
   }),
 }));
 
-
 // Schema validation
 export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
@@ -537,6 +582,16 @@ export const selectCustomPricingRuleSchema = createSelectSchema(customPricingRul
 export const insertPackageChangeHistorySchema = createInsertSchema(packageChangeHistory);
 export const selectPackageChangeHistorySchema = createSelectSchema(packageChangeHistory);
 
+// Add schema validation for task tables
+export const insertTaskSchema = createInsertSchema(tasks);
+export const selectTaskSchema = createSelectSchema(tasks);
+export const insertTaskCategorySchema = createInsertSchema(taskCategories);
+export const selectTaskCategorySchema = createSelectSchema(taskCategories);
+export const insertTaskDependencySchema = createInsertSchema(taskDependencies);
+export const selectTaskDependencySchema = createSelectSchema(taskDependencies);
+export const insertTaskStatusHistorySchema = createInsertSchema(taskStatusHistory);
+export const selectTaskStatusHistorySchema = createSelectSchema(taskStatusHistory);
+
 
 // Types
 export type User = typeof users.$inferSelect;
@@ -579,3 +634,67 @@ export type CustomPricingRule = typeof customPricingRules.$inferSelect;
 export type NewCustomPricingRule = typeof customPricingRules.$inferInsert;
 export type PackageChangeHistory = typeof packageChangeHistory.$inferSelect;
 export type NewPackageChangeHistory = typeof packageChangeHistory.$inferInsert;
+
+// Add types for task tables
+export type Task = typeof tasks.$inferSelect;
+export type NewTask = typeof tasks.$inferInsert;
+export type TaskCategory = typeof taskCategories.$inferSelect;
+export type NewTaskCategory = typeof taskCategories.$inferInsert;
+export type TaskDependency = typeof taskDependencies.$inferSelect;
+export type NewTaskDependency = typeof taskDependencies.$inferInsert;
+export type TaskStatusHistory = typeof taskStatusHistory.$inferSelect;
+export type NewTaskStatusHistory = typeof taskStatusHistory.$inferInsert;
+
+export const tasksRelations = relations(tasks, ({ one, many }) => ({
+  category: one(taskCategories, {
+    fields: [tasks.categoryId],
+    references: [taskCategories.id],
+  }),
+  assignedUser: one(users, {
+    fields: [tasks.assignedTo],
+    references: [users.id],
+  }),
+  creator: one(users, {
+    fields: [tasks.createdBy],
+    references: [users.id],
+  }),
+  project: one(projects, {
+    fields: [tasks.projectId],
+    references: [projects.id],
+  }),
+  parentTask: one(tasks, {
+    fields: [tasks.parentTaskId],
+    references: [tasks.id],
+  }),
+  dependencies: many(taskDependencies, { relationName: "taskDependencies" }),
+  dependents: many(taskDependencies, { relationName: "dependentTasks" }),
+  statusHistory: many(taskStatusHistory),
+}));
+
+export const taskCategoriesRelations = relations(taskCategories, ({ many }) => ({
+  tasks: many(tasks),
+}));
+
+export const taskDependenciesRelations = relations(taskDependencies, ({ one }) => ({
+  task: one(tasks, {
+    fields: [taskDependencies.taskId],
+    references: [tasks.id],
+    relationName: "taskDependencies",
+  }),
+  dependsOn: one(tasks, {
+    fields: [taskDependencies.dependsOnTaskId],
+    references: [tasks.id],
+    relationName: "dependentTasks",
+  }),
+}));
+
+export const taskStatusHistoryRelations = relations(taskStatusHistory, ({ one }) => ({
+  task: one(tasks, {
+    fields: [taskStatusHistory.taskId],
+    references: [tasks.id],
+  }),
+  user: one(users, {
+    fields: [taskStatusHistory.changedBy],
+    references: [users.id],
+  }),
+}));
