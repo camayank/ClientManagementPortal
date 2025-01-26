@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, QueryClient } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +43,7 @@ import {
   Upload,
   FileText,
   Plus,
+  Loader2,
 } from "lucide-react";
 import type { ClientOnboarding, ClientOnboardingDocument } from "@db/schema";
 import { Progress } from "@/components/ui/progress";
@@ -147,6 +148,7 @@ export default function ClientOnboarding() {
   const [showDocuments, setShowDocuments] = useState(false);
   const [showNewClient, setShowNewClient] = useState(false);
   const { toast } = useToast();
+  const queryClient = new QueryClient(); // Added QueryClient
 
   const form = useForm<NewClientFormData>({
     resolver: zodResolver(newClientSchema),
@@ -239,6 +241,14 @@ export default function ClientOnboarding() {
         throw new Error(await response.text());
       }
 
+      const newClient = await response.json();
+
+      // Optimistically update the query cache
+      queryClient.setQueryData<ClientOnboarding[]>(
+        ["/api/admin/client-onboarding"],
+        (old) => [...(old || []), newClient]
+      );
+
       toast({
         title: "Success",
         description: "New client onboarding started successfully",
@@ -246,7 +256,9 @@ export default function ClientOnboarding() {
 
       form.reset();
       setShowNewClient(false);
-      refetch();
+
+      // Force a refetch to ensure data consistency
+      await queryClient.invalidateQueries({ queryKey: ["/api/admin/client-onboarding"] });
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -371,7 +383,16 @@ export default function ClientOnboarding() {
                     <Button variant="outline" type="button" onClick={() => setShowNewClient(false)}>
                       Cancel
                     </Button>
-                    <Button type="submit">Start Onboarding</Button>
+                    <Button type="submit" disabled={form.formState.isSubmitting}>
+                      {form.formState.isSubmitting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Creating...
+                        </>
+                      ) : (
+                        "Start Onboarding"
+                      )}
+                    </Button>
                   </DialogFooter>
                 </form>
               </Form>
