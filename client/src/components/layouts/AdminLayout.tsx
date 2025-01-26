@@ -1,7 +1,17 @@
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/hooks/use-user";
 import { Link } from "wouter";
-import { LayoutDashboard, Users, LogOut, FileText, Key, FileSpreadsheet } from "lucide-react";
+import {
+  LayoutDashboard,
+  Users,
+  LogOut,
+  FileText,
+  Key,
+  FileSpreadsheet,
+  UserPlus,
+  Package2,
+  Shield
+} from "lucide-react";
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const { logout } = useUser();
@@ -26,6 +36,18 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
                 Clients
               </Button>
             </Link>
+            <Link href="/admin/client-onboarding">
+              <Button variant="ghost" className="w-full justify-start">
+                <UserPlus className="mr-2 h-4 w-4" />
+                Onboarding
+              </Button>
+            </Link>
+            <Link href="/admin/service-packages">
+              <Button variant="ghost" className="w-full justify-start">
+                <Package2 className="mr-2 h-4 w-4" />
+                Service Packages
+              </Button>
+            </Link>
             <Link href="/admin/documents">
               <Button variant="ghost" className="w-full justify-start">
                 <FileText className="mr-2 h-4 w-4" />
@@ -42,6 +64,12 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
               <Button variant="ghost" className="w-full justify-start">
                 <FileSpreadsheet className="mr-2 h-4 w-4" />
                 Reports
+              </Button>
+            </Link>
+            <Link href="/admin/user-roles">
+              <Button variant="ghost" className="w-full justify-start">
+                <Shield className="mr-2 h-4 w-4" />
+                User Roles
               </Button>
             </Link>
             <Button 
