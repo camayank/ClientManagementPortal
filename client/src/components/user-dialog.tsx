@@ -98,20 +98,23 @@ export default function UserDialog({ open, onOpenChange }: UserDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px] w-[95%] max-h-[90vh] overflow-y-auto p-4 md:p-6">
         <form onSubmit={form.handleSubmit((data) => createUser.mutate(data))}>
           <DialogHeader>
-            <DialogTitle>Create New User</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-xl md:text-2xl">Create New User</DialogTitle>
+            <DialogDescription className="text-sm md:text-base">
               Add a new user with specified role and access level.
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label htmlFor="fullName">Full Name</Label>
+              <Label htmlFor="fullName" className="text-sm font-medium">
+                Full Name
+              </Label>
               <Input
                 id="fullName"
+                className="w-full"
                 {...form.register("fullName")}
               />
               {form.formState.errors.fullName && (
@@ -120,10 +123,13 @@ export default function UserDialog({ open, onOpenChange }: UserDialogProps) {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="email">Email Address</Label>
+              <Label htmlFor="email" className="text-sm font-medium">
+                Email Address
+              </Label>
               <Input
                 id="email"
                 type="email"
+                className="w-full"
                 {...form.register("email")}
               />
               {form.formState.errors.email && (
@@ -132,9 +138,12 @@ export default function UserDialog({ open, onOpenChange }: UserDialogProps) {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="username" className="text-sm font-medium">
+                Username
+              </Label>
               <Input
                 id="username"
+                className="w-full"
                 {...form.register("username")}
               />
               {form.formState.errors.username && (
@@ -143,10 +152,13 @@ export default function UserDialog({ open, onOpenChange }: UserDialogProps) {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password" className="text-sm font-medium">
+                Password
+              </Label>
               <Input
                 id="password"
                 type="password"
+                className="w-full"
                 {...form.register("password")}
               />
               {form.formState.errors.password && (
@@ -155,7 +167,9 @@ export default function UserDialog({ open, onOpenChange }: UserDialogProps) {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="role">Role</Label>
+              <Label htmlFor="role" className="text-sm font-medium">
+                Role
+              </Label>
               <Select 
                 onValueChange={(value) => form.setValue("role", value as any)}
                 defaultValue={form.getValues("role")}
@@ -163,7 +177,7 @@ export default function UserDialog({ open, onOpenChange }: UserDialogProps) {
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select a role" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="w-full">
                   <SelectItem value="administrator">Administrator</SelectItem>
                   <SelectItem value="client">Client</SelectItem>
                   <SelectItem value="manager">Manager</SelectItem>
@@ -180,11 +194,20 @@ export default function UserDialog({ open, onOpenChange }: UserDialogProps) {
             </div>
           </div>
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => onOpenChange(false)}
+            >
               Cancel
             </Button>
-            <Button type="submit" disabled={createUser.isPending}>
+            <Button
+              type="submit"
+              className="w-full sm:w-auto"
+              disabled={createUser.isPending}
+            >
               {createUser.isPending ? "Creating..." : "Create User"}
             </Button>
           </DialogFooter>
