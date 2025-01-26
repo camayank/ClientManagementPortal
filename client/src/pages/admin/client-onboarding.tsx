@@ -25,11 +25,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import {
   ClipboardList,
   UserPlus,
@@ -41,11 +43,11 @@ import {
   Package,
   Upload,
   FileText,
+  Plus,
 } from "lucide-react";
 import type { ClientOnboarding, ClientOnboardingDocument } from "@db/schema";
 import { Progress } from "@/components/ui/progress";
 
-// Onboarding steps definition remains the same...
 const ONBOARDING_STEPS = [
   "initial_contact",
   "needs_assessment",
@@ -68,7 +70,6 @@ const STEP_LABELS: Record<typeof ONBOARDING_STEPS[number], string> = {
   completed: "Completed",
 };
 
-// Requirements definition remains the same...
 const STEP_REQUIREMENTS: Record<typeof ONBOARDING_STEPS[number], string[]> = {
   initial_contact: [
     "Schedule initial meeting",
@@ -132,6 +133,7 @@ export default function ClientOnboarding() {
   const [selectedClient, setSelectedClient] = useState<ClientOnboarding | null>(null);
   const [showRequirements, setShowRequirements] = useState(false);
   const [showDocuments, setShowDocuments] = useState(false);
+  const [showNewClient, setShowNewClient] = useState(false);
   const { toast } = useToast();
 
   const { data: onboardingClients, isLoading, refetch } = useQuery<ClientOnboarding[]>({
@@ -241,252 +243,389 @@ export default function ClientOnboarding() {
               Manage and track client onboarding progress
             </p>
           </div>
+          <DialogTrigger asChild>
+            <Button onClick={() => setShowNewClient(true)}>
+              <UserPlus className="w-4 h-4 mr-2" />
+              New Client
+            </Button>
+          </DialogTrigger>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ClipboardList className="h-5 w-5" />
-              Active Onboarding
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="flex justify-center py-8">
-                <span className="loading loading-spinner"></span>
+        <div className="grid gap-6">
+          {/* Quick Stats */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Total Onboarding
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {onboardingClients?.length || 0}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">
+                  New This Month
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {onboardingClients?.filter(c => 
+                    new Date(c.startedAt).getMonth() === new Date().getMonth()
+                  ).length || 0}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Completed This Month
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {onboardingClients?.filter(c => 
+                    c.currentStep === 'completed' &&
+                    new Date(c.completedAt).getMonth() === new Date().getMonth()
+                  ).length || 0}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Average Completion Time
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  14 days
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Main Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ClipboardList className="h-5 w-5" />
+                Active Onboarding
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="flex justify-center py-8">
+                  <span className="loading loading-spinner"></span>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Client</TableHead>
+                      <TableHead>Progress</TableHead>
+                      <TableHead>Current Step</TableHead>
+                      <TableHead>Documents</TableHead>
+                      <TableHead>Communication</TableHead>
+                      <TableHead>Package</TableHead>
+                      <TableHead>Started</TableHead>
+                      <TableHead>Assigned To</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {onboardingClients?.map((client) => (
+                      <TableRow key={client.id}>
+                        <TableCell className="font-medium">
+                          {client.client?.company}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Progress 
+                              value={calculateProgress(client)} 
+                              className="w-[60px]" 
+                            />
+                            <span className="text-sm text-muted-foreground">
+                              {Math.round(calculateProgress(client))}%
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {getStepBadge(client.currentStep)}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="flex items-center gap-1"
+                            onClick={() => {
+                              setSelectedClient(client);
+                              setShowDocuments(true);
+                            }}
+                          >
+                            <Paperclip className="w-4 h-4" />
+                            View
+                          </Button>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="flex items-center gap-1"
+                          >
+                            <MessageSquare className="w-4 h-4" />
+                            History
+                          </Button>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="flex items-center gap-1"
+                          >
+                            <Package className="w-4 h-4" />
+                            Assign
+                          </Button>
+                        </TableCell>
+                        <TableCell>
+                          {client.startedAt ? new Date(client.startedAt).toLocaleDateString() : 'N/A'}
+                        </TableCell>
+                        <TableCell>
+                          {client.assignedUser?.username || "Unassigned"}
+                        </TableCell>
+                        <TableCell className="text-right space-x-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedClient(client);
+                              setShowRequirements(true);
+                            }}
+                          >
+                            Requirements
+                          </Button>
+                          <Select
+                            value={client.currentStep}
+                            onValueChange={(value) =>
+                              updateOnboardingStatus(client.id, value)
+                            }
+                          >
+                            <SelectTrigger className="w-[200px]">
+                              <SelectValue placeholder="Select step" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {ONBOARDING_STEPS.map((step) => (
+                                <SelectItem key={step} value={step}>
+                                  {STEP_LABELS[step]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Timeline View */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Onboarding Timeline</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="relative space-y-4">
+                {ONBOARDING_STEPS.map((step, index) => (
+                  <div key={step} className="flex items-center gap-4">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                      {index + 1}
+                    </div>
+                    <div className="flex-grow">
+                      <h4 className="font-medium">{STEP_LABELS[step]}</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {STEP_REQUIREMENTS[step][0]}
+                      </p>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Progress</TableHead>
-                    <TableHead>Current Step</TableHead>
-                    <TableHead>Documents</TableHead>
-                    <TableHead>Communication</TableHead>
-                    <TableHead>Package</TableHead>
-                    <TableHead>Started</TableHead>
-                    <TableHead>Assigned To</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {onboardingClients?.map((client) => (
-                    <TableRow key={client.id}>
-                      <TableCell className="font-medium">
-                        {client.client?.company}
-                      </TableCell>
-                      <TableCell>
-                        <Progress value={calculateProgress(client)} className="w-[60px]" />
-                      </TableCell>
-                      <TableCell>
-                        {getStepBadge(client.currentStep)}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="flex items-center gap-1"
-                          onClick={() => {
-                            setSelectedClient(client);
-                            setShowDocuments(true);
-                          }}
-                        >
-                          <Paperclip className="w-4 h-4" />
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Requirements Dialog */}
+        <Dialog
+          open={showRequirements}
+          onOpenChange={() => {
+            setShowRequirements(false);
+            setSelectedClient(null);
+          }}
+        >
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Step Requirements</DialogTitle>
+              <DialogDescription>
+                Complete these requirements before moving to the next step
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {selectedClient && (
+                <>
+                  <h3 className="text-lg font-semibold">
+                    {STEP_LABELS[selectedClient.currentStep]}
+                  </h3>
+                  <div className="space-y-2">
+                    {STEP_REQUIREMENTS[selectedClient.currentStep].map((req, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center gap-2 p-2 border rounded-lg"
+                      >
+                        <input
+                          type="checkbox"
+                          className="form-checkbox h-4 w-4"
+                        />
+                        <span>{req}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium mb-2">
+                      Additional Notes
+                    </label>
+                    <Textarea
+                      placeholder="Add notes about the current status..."
+                      defaultValue={selectedClient?.notes || ""}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                type="submit"
+                onClick={() =>
+                  selectedClient &&
+                  updateOnboardingStatus(
+                    selectedClient.id,
+                    selectedClient.currentStep,
+                    selectedClient.notes
+                  )
+                }
+              >
+                Update Progress
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Documents Dialog */}
+        <Dialog
+          open={showDocuments}
+          onOpenChange={() => {
+            setShowDocuments(false);
+            setSelectedClient(null);
+          }}
+        >
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Client Documents</DialogTitle>
+              <DialogDescription>
+                Manage required documents for client onboarding
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {REQUIRED_DOCUMENTS.map((docType) => {
+                const doc = documents?.find((d) => d.documentType === docType);
+                return (
+                  <div
+                    key={docType}
+                    className="flex items-center justify-between p-3 border rounded-lg"
+                  >
+                    <div>
+                      <h4 className="font-medium">{docType}</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {doc ? "Uploaded" : "Pending"}
+                      </p>
+                    </div>
+                    <div>
+                      {doc ? (
+                        <Button variant="outline" size="sm">
+                          <FileText className="w-4 h-4 mr-2" />
                           View
                         </Button>
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="flex items-center gap-1"
-                        >
-                          <MessageSquare className="w-4 h-4" />
-                          History
-                        </Button>
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="flex items-center gap-1"
-                        >
-                          <Package className="w-4 h-4" />
-                          Assign
-                        </Button>
-                      </TableCell>
-                      <TableCell>
-                        {new Date(client.startedAt).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell>
-                        {client.assignedUser?.username || "Unassigned"}
-                      </TableCell>
-                      <TableCell className="text-right space-x-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedClient(client);
-                            setShowRequirements(true);
-                          }}
-                        >
-                          Requirements
-                        </Button>
-                        <Select
-                          value={client.currentStep}
-                          onValueChange={(value) =>
-                            updateOnboardingStatus(client.id, value)
-                          }
-                        >
-                          <SelectTrigger className="w-[200px]">
-                            <SelectValue placeholder="Select step" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {ONBOARDING_STEPS.map((step) => (
-                              <SelectItem key={step} value={step}>
-                                {STEP_LABELS[step]}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Requirements Dialog */}
-      <Dialog
-        open={showRequirements}
-        onOpenChange={() => {
-          setShowRequirements(false);
-          setSelectedClient(null);
-        }}
-      >
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Step Requirements</DialogTitle>
-            <DialogDescription>
-              Complete these requirements before moving to the next step
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {selectedClient && (
-              <>
-                <h3 className="text-lg font-semibold">
-                  {STEP_LABELS[selectedClient.currentStep]}
-                </h3>
-                <div className="space-y-2">
-                  {STEP_REQUIREMENTS[selectedClient.currentStep].map((req, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center gap-2 p-2 border rounded-lg"
-                    >
-                      <input
-                        type="checkbox"
-                        className="form-checkbox h-4 w-4"
-                      />
-                      <span>{req}</span>
+                      ) : (
+                        <label>
+                          <input
+                            type="file"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file && selectedClient) {
+                                uploadDocument(selectedClient.id, file, docType);
+                              }
+                            }}
+                          />
+                          <Button variant="outline" size="sm" asChild>
+                            <span>
+                              <Upload className="w-4 h-4 mr-2" />
+                              Upload
+                            </span>
+                          </Button>
+                        </label>
+                      )}
                     </div>
-                  ))}
-                </div>
-                <div className="mt-4">
-                  <label className="block text-sm font-medium mb-2">
-                    Additional Notes
-                  </label>
-                  <Textarea
-                    placeholder="Add notes about the current status..."
-                    defaultValue={selectedClient?.notes || ""}
-                  />
-                </div>
-              </>
-            )}
-          </div>
-          <DialogFooter>
-            <Button
-              type="submit"
-              onClick={() =>
-                selectedClient &&
-                updateOnboardingStatus(
-                  selectedClient.id,
-                  selectedClient.currentStep,
-                  selectedClient.notes
-                )
-              }
-            >
-              Update Progress
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                  </div>
+                );
+              })}
+            </div>
+          </DialogContent>
+        </Dialog>
 
-      {/* Documents Dialog */}
-      <Dialog
-        open={showDocuments}
-        onOpenChange={() => {
-          setShowDocuments(false);
-          setSelectedClient(null);
-        }}
-      >
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Client Documents</DialogTitle>
-            <DialogDescription>
-              Manage required documents for client onboarding
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            {REQUIRED_DOCUMENTS.map((docType) => {
-              const doc = documents?.find((d) => d.documentType === docType);
-              return (
-                <div
-                  key={docType}
-                  className="flex items-center justify-between p-3 border rounded-lg"
-                >
-                  <div>
-                    <h4 className="font-medium">{docType}</h4>
-                    <p className="text-sm text-muted-foreground">
-                      {doc ? "Uploaded" : "Pending"}
-                    </p>
-                  </div>
-                  <div>
-                    {doc ? (
-                      <Button variant="outline" size="sm">
-                        <FileText className="w-4 h-4 mr-2" />
-                        View
-                      </Button>
-                    ) : (
-                      <label>
-                        <input
-                          type="file"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file && selectedClient) {
-                              uploadDocument(selectedClient.id, file, docType);
-                            }
-                          }}
-                        />
-                        <Button variant="outline" size="sm" asChild>
-                          <span>
-                            <Upload className="w-4 h-4 mr-2" />
-                            Upload
-                          </span>
-                        </Button>
-                      </label>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </DialogContent>
-      </Dialog>
+        {/* New Client Dialog */}
+        <Dialog
+          open={showNewClient}
+          onOpenChange={setShowNewClient}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add New Client</DialogTitle>
+              <DialogDescription>
+                Start the onboarding process for a new client
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium">Company Name</label>
+                <Input placeholder="Enter company name" />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Email</label>
+                <Input type="email" placeholder="company@example.com" />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Contact Person</label>
+                <Input placeholder="Full name" />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Phone</label>
+                <Input type="tel" placeholder="Phone number" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowNewClient(false)}>
+                Cancel
+              </Button>
+              <Button>Start Onboarding</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
     </AdminLayout>
   );
 }
