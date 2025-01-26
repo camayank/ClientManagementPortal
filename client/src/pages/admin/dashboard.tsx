@@ -12,31 +12,37 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
+import { useUser } from "@/hooks/use-user";
 
 export default function AdminDashboard() {
   const { data: stats } = useQuery({
     queryKey: ['/api/admin/stats'],
   });
 
+  const { user } = useUser();
+  const hasRoleAccess = user?.role === 'admin';
+
   return (
     <AdminLayout>
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-          <div className="flex gap-4">
-            <Button variant="outline" asChild>
-              <Link href="/admin/roles">
-                <Settings className="mr-2 h-4 w-4" />
-                Role Management
-              </Link>
-            </Button>
-            <Button variant="outline" asChild>
-              <Link href="/admin/user-roles">
-                <Users className="mr-2 h-4 w-4" />
-                User Role Assignment
-              </Link>
-            </Button>
-          </div>
+          {hasRoleAccess && (
+            <div className="flex gap-4">
+              <Button variant="outline" asChild>
+                <Link href="/admin/roles">
+                  <Settings className="mr-2 h-4 w-4" />
+                  Role Management
+                </Link>
+              </Button>
+              <Button variant="outline" asChild>
+                <Link href="/admin/user-roles">
+                  <Users className="mr-2 h-4 w-4" />
+                  User Role Assignment
+                </Link>
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
