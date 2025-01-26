@@ -45,6 +45,7 @@ import type {
   CustomPricingRule
 } from "@db/schema";
 import { FeatureTierDialog } from "@/components/feature-tier-dialog";
+import { PricingRuleDialog } from "@/components/pricing-rule-dialog";
 
 // Helper functions for package comparison
 function getAllFeatures(packages: ServicePackage[] | undefined): string[] {
@@ -433,6 +434,18 @@ export default function ServicePackages() {
                 </div>
               </CardContent>
             </Card>
+
+            <PricingRuleDialog
+              open={isNewPricingRuleDialogOpen}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setIsNewPricingRuleDialogOpen(false);
+                  setSelectedPricingRule(null);
+                }
+              }}
+              selectedRule={selectedPricingRule}
+              packages={packages}
+            />
           </TabsContent>
 
           <TabsContent value="comparison">

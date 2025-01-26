@@ -911,8 +911,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.get("/api/admin/service-features", requirePermission('packages', 'read'), async (req, res) => {
-    try {
+  app.get("/api/admin/service-features", requirePermission('packages', 'read'), async (req, res) => {    try {
       const features = await db.select().from(serviceFeatures);
       res.json(features);
     } catch (error) {
@@ -993,6 +992,34 @@ export function registerRoutes(app: Express): Server {
       console.error("Error creating pricing rule:", error);
       res.status(500).json({
         message: "Failed to create pricing rule",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.patch("/api/admin/pricing-rules/:id", requirePermission('packages', 'update'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { packageId, name, description, condition, adjustment, priority, isActive } = req.body;
+
+      const [updatedRule] = await db.update(customPricingRules)
+        .set({
+          packageId: parseInt(packageId),
+          name,
+          description,
+          condition,
+          adjustment,
+          priority: priority || 0,
+          isActive: isActive ?? true,
+        })
+        .where(eq(customPricingRules.id, parseInt(id)))
+        .returning();
+
+      res.json(updatedRule);
+    } catch (error) {
+      console.error("Error updating pricing rule:", error);
+      res.status(500).json({
+        message: "Failed to update pricing rule",
         error: (error as Error).message
       });
     }
