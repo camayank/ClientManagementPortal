@@ -9,6 +9,7 @@ import {
   BarChart,
   Shield,
   UserPlus,
+  Package2,
   LogOut,
 } from "lucide-react";
 
@@ -41,6 +42,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   <Button variant="ghost" className="gap-2">
                     <UserPlus className="h-4 w-4" />
                     Onboarding
+                  </Button>
+                </Link>
+                <Link href="/admin/service-packages">
+                  <Button variant="ghost" className="gap-2">
+                    <Package2 className="h-4 w-4" />
+                    Service Packages
                   </Button>
                 </Link>
                 <Link href="/admin/documents">

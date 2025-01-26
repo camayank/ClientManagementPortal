@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketService } from "./websocket/server";
 import { setupAuth, hashPassword } from "./auth";
 import { db } from "@db";
-import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles, clientOnboarding } from "@db/schema";
+import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles, clientOnboarding, servicePackages, clientServices } from "@db/schema";
 import multer from "multer";
 import { eq, and, sql } from "drizzle-orm";
 import { requirePermission } from "./middleware/check-permission";
@@ -658,6 +658,7 @@ export function registerRoutes(app: Express): Server {
   });
 
 
+
   app.get("/api/admin/reports", requirePermission('reports', 'read'), async (req, res) => {
     const { type, startDate, endDate } = req.query;
     if (!startDate || !endDate) {
@@ -786,6 +787,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+
   app.post("/api/admin/reports/:type/download", requirePermission('reports', 'download'), async (req, res) => {
     const { type } = req.params;
     const { startDate, endDate } = req.body;
@@ -883,18 +885,18 @@ export function registerRoutes(app: Express): Server {
           .status(400)
           .send("Invalid input: " + result.error.issues.map(i => i.message).join(", "));
       }
-      const { username, password, role } = result.data;
-      if (role === 'admin') {
-        return res.status(403).send("Admin accounts can only be created by existing administrators");
-      }
+      const { username, password } = result.data;
       const [existingUser] = await db
         .select()
         .from(users)
         .where(eq(users.username, username))
         .limit(1);
+
       if (existingUser) {
         return res.status(400).send("Username already exists");
       }
+
+      // Create the user
       const [newUser] = await db
         .insert(users)
         .values({
@@ -903,7 +905,9 @@ export function registerRoutes(app: Express): Server {
           role: 'client',
         })
         .returning();
-      if (role === 'client') {
+
+      // If it's a client, create a client record
+      if (newUser.role === 'client') {
         await db.insert(clients)
           .values({
             userId: newUser.id,
@@ -911,6 +915,8 @@ export function registerRoutes(app: Express): Server {
             status: 'active',
           });
       }
+
+      // Log the user in
       req.login(newUser, (err) => {
         if (err) {
           return next(err);
@@ -925,40 +931,113 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.post("/api/admin/create-first-admin", async (req, res) => {
+  // Service Package Management Routes
+  app.get("/api/admin/service-packages", requirePermission('packages', 'read'), async (req, res) => {
     try {
-      const [existingAdmin] = await db
-        .select()
-        .from(users)
-        .where(eq(users.role, 'admin'))
-        .limit(1);
+      const packages = await db.select().from(servicePackages);
+      res.json(packages);
+    } catch (error) {
+      console.error("Error fetching service packages:", error);
+      res.status(500).json({
+        message: "Failed to fetch service packages",
+        error: (error as Error).message
+      });
+    }
+  });
 
-      if (existingAdmin) {
-        return res.status(400).send("Admin user already exists");
+  app.post("/api/admin/service-packages", requirePermission('packages', 'create'), async (req, res) => {
+    try {
+      const { name, description, basePrice, billingCycle, features } = req.body;
+
+      if (!name || !billingCycle) {
+        return res.status(400).json({
+          message: "Name and billing cycle are required"
+        });
       }
 
-      const { username, password } = req.body;
-      if (!username || !password) {
-        return res.status(400).send("Username and password are required");
-      }
-
-      const hashedPassword = await hashPassword(password);
-      const [adminUser] = await db
-        .insert(users)
+      const [newPackage] = await db.insert(servicePackages)
         .values({
-          username,
-          password: hashedPassword,
-          role: 'admin',
+          name,
+          description,
+          basePrice: basePrice ? parseFloat(basePrice) : null,
+          billingCycle,
+          features: features || [],
+          isActive: true,
         })
         .returning();
 
-      res.json({
-        message: "Admin user created successfully",
-        user: { id: adminUser.id, username: adminUser.username }
-      });
+      res.status(201).json(newPackage);
     } catch (error) {
-      console.error("Error creating admin:", error);
-      res.status(500).send("Failed to create admin user");
+      console.error("Error creating service package:", error);
+      res.status(500).json({
+        message: "Failed to create service package",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.patch("/api/admin/service-packages/:id", requirePermission('packages', 'update'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, description, basePrice, billingCycle, features, isActive } = req.body;
+
+      const [existingPackage] = await db.select()
+        .from(servicePackages)
+        .where(eq(servicePackages.id, parseInt(id)))
+        .limit(1);
+
+      if (!existingPackage) {
+        return res.status(404).json({ message: "Service package not found" });
+      }
+
+      const [updatedPackage] = await db.update(servicePackages)
+        .set({
+          name: name || existingPackage.name,
+          description: description ?? existingPackage.description,
+          basePrice: basePrice ? parseFloat(basePrice) : existingPackage.basePrice,
+          billingCycle: billingCycle || existingPackage.billingCycle,
+          features: features || existingPackage.features,
+          isActive: isActive ?? existingPackage.isActive,
+        })
+        .where(eq(servicePackages.id, parseInt(id)))
+        .returning();
+
+      res.json(updatedPackage);
+    } catch (error) {
+      console.error("Error updating service package:", error);
+      res.status(500).json({
+        message: "Failed to update service package",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.get("/api/admin/service-packages/:id/clients", requirePermission('packages', 'read'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const clients = await db.select({
+        id: clientServices.id,
+        clientId: clientServices.clientId,
+        startDate: clientServices.startDate,
+        endDate: clientServices.endDate,
+        status: clientServices.status,
+        client: {
+          id: clients.id,
+          company: clients.company,
+          status: clients.status,
+        }
+      })
+        .from(clientServices)
+        .where(eq(clientServices.packageId, parseInt(id)))
+        .leftJoin(clients, eq(clientServices.clientId, clients.id));
+
+      res.json(clients);
+    } catch (error) {
+      console.error("Error fetching package clients:", error);
+      res.status(500).json({
+        message: "Failed to fetch package clients",
+        error: (error as Error).message
+      });
     }
   });
 
@@ -1611,6 +1690,115 @@ export function registerRoutes(app: Express): Server {
       console.error("Error creating client:", error);
       res.status(500).json({
         message: "Failed to create client",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.get("/api/admin/service-packages", requirePermission('packages', 'read'), async (req, res) => {
+    try {
+      const packages = await db.select().from(servicePackages);
+      res.json(packages);
+    } catch (error) {
+      console.error("Error fetching service packages:", error);
+      res.status(500).json({
+        message: "Failed to fetch service packages",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.post("/api/admin/service-packages", requirePermission('packages', 'create'), async (req, res) => {
+    try {
+      const { name, description, basePrice, billingCycle, features } = req.body;
+
+      if (!name || !billingCycle) {
+        return res.status(400).json({
+          message: "Name and billing cycle are required"
+        });
+      }
+
+      const [newPackage] = await db.insert(servicePackages)
+        .values({
+          name,
+          description,
+          basePrice: basePrice ? parseFloat(basePrice) : null,
+          billingCycle,
+          features: features || [],
+          isActive: true,
+        })
+        .returning();
+
+      res.status(201).json(newPackage);
+    } catch (error) {
+      console.error("Error creating service package:", error);
+      res.status(500).json({
+        message: "Failed to create service package",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.patch("/api/admin/service-packages/:id", requirePermission('packages', 'update'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, description, basePrice, billingCycle, features, isActive } = req.body;
+
+      const [existingPackage] = await db.select()
+        .from(servicePackages)
+        .where(eq(servicePackages.id, parseInt(id)))
+        .limit(1);
+
+      if (!existingPackage) {
+        return res.status(404).json({ message: "Service package not found" });
+      }
+
+      const [updatedPackage] = await db.update(servicePackages)
+        .set({
+          name: name || existingPackage.name,
+          description: description ?? existingPackage.description,
+          basePrice: basePrice ? parseFloat(basePrice) : existingPackage.basePrice,
+          billingCycle: billingCycle || existingPackage.billingCycle,
+          features: features || existingPackage.features,
+          isActive: isActive ?? existingPackage.isActive,
+        })
+        .where(eq(servicePackages.id, parseInt(id)))
+        .returning();
+
+      res.json(updatedPackage);
+    } catch (error) {
+      console.error("Error updating service package:", error);
+      res.status(500).json({
+        message: "Failed to update service package",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.get("/api/admin/service-packages/:id/clients", requirePermission('packages', 'read'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const clients = await db.select({
+        id: clientServices.id,
+        clientId: clientServices.clientId,
+        startDate: clientServices.startDate,
+        endDate: clientServices.endDate,
+        status: clientServices.status,
+        client: {
+          id: clients.id,
+          company: clients.company,
+          status: clients.status,
+        }
+      })
+        .from(clientServices)
+        .where(eq(clientServices.packageId, parseInt(id)))
+        .leftJoin(clients, eq(clientServices.clientId, clients.id));
+
+      res.json(clients);
+    } catch (error) {
+      console.error("Error fetching package clients:", error);
+      res.status(500).json({
+        message: "Failed to fetch package clients",
         error: (error as Error).message
       });
     }
