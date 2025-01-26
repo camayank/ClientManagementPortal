@@ -103,7 +103,7 @@ export default function UserDialog({ open, onOpenChange }: UserDialogProps) {
           <DialogHeader>
             <DialogTitle>Create New User</DialogTitle>
             <DialogDescription>
-              Create a new user with specified role and access level.
+              Add a new user with specified role and access level.
             </DialogDescription>
           </DialogHeader>
 
@@ -120,7 +120,7 @@ export default function UserDialog({ open, onOpenChange }: UserDialogProps) {
             </div>
 
             <div className="grid gap-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">Email Address</Label>
               <Input
                 id="email"
                 type="email"
@@ -160,7 +160,7 @@ export default function UserDialog({ open, onOpenChange }: UserDialogProps) {
                 onValueChange={(value) => form.setValue("role", value as any)}
                 defaultValue={form.getValues("role")}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select a role" />
                 </SelectTrigger>
                 <SelectContent>
