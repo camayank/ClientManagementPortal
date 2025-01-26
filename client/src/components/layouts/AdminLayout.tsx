@@ -10,7 +10,12 @@ import {
   FileSpreadsheet,
   UserPlus,
   Package2,
-  Shield
+  Shield,
+  ListTodo,
+  GanttChartSquare,
+  CheckSquare,
+  Clock,
+  AlertTriangle,
 } from "lucide-react";
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -46,6 +51,36 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
               <Button variant="ghost" className="w-full justify-start">
                 <Package2 className="mr-2 h-4 w-4" />
                 Service Packages
+              </Button>
+            </Link>
+            <Link href="/admin/tasks">
+              <Button variant="ghost" className="w-full justify-start">
+                <ListTodo className="mr-2 h-4 w-4" />
+                Tasks Management
+              </Button>
+            </Link>
+            <Link href="/admin/work-allocation">
+              <Button variant="ghost" className="w-full justify-start">
+                <GanttChartSquare className="mr-2 h-4 w-4" />
+                Work Allocation
+              </Button>
+            </Link>
+            <Link href="/admin/quality-control">
+              <Button variant="ghost" className="w-full justify-start">
+                <CheckSquare className="mr-2 h-4 w-4" />
+                Quality Control
+              </Button>
+            </Link>
+            <Link href="/admin/sla-management">
+              <Button variant="ghost" className="w-full justify-start">
+                <Clock className="mr-2 h-4 w-4" />
+                SLA Management
+              </Button>
+            </Link>
+            <Link href="/admin/escalations">
+              <Button variant="ghost" className="w-full justify-start">
+                <AlertTriangle className="mr-2 h-4 w-4" />
+                Escalations
               </Button>
             </Link>
             <Link href="/admin/documents">

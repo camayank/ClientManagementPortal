@@ -18,11 +18,14 @@ const userInputSchema = z.object({
   role: z.enum(["admin", "client"]).default("client"),
 });
 
+// Define a type that extends the base User type from schema
+type AuthUser = Omit<User, 'password'> & {
+  roles?: string[];
+};
+
 declare global {
   namespace Express {
-    interface User extends Omit<User, 'password'> {
-      roles?: string[];
-    }
+    interface User extends AuthUser {}
   }
 }
 
@@ -97,7 +100,7 @@ export function setupAuth(app: Express) {
 
         console.log("User roles:", userRolesData);
 
-        const userWithRoles = {
+        const userWithRoles: AuthUser = {
           ...user,
           password: undefined,
           roles: userRolesData.map(r => r.roleName),
@@ -116,8 +119,8 @@ export function setupAuth(app: Express) {
     })
   );
 
-  passport.serializeUser((user, done) => {
-    done(null, (user as Express.User).id);
+  passport.serializeUser((user: Express.User, done) => {
+    done(null, user.id);
   });
 
   passport.deserializeUser(async (id: number, done) => {
@@ -141,7 +144,7 @@ export function setupAuth(app: Express) {
         .innerJoin(roles, eq(userRoles.roleId, roles.id))
         .where(eq(userRoles.userId, user.id));
 
-      const userWithRoles = {
+      const userWithRoles: AuthUser = {
         ...user,
         password: undefined,
         roles: userRolesData.map(r => r.roleName),

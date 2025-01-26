@@ -1,7 +1,18 @@
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/hooks/use-user";
 import { Link } from "wouter";
-import { LayoutDashboard, LogOut, FileText, User, FolderKanban } from "lucide-react";
+import { 
+  LayoutDashboard, 
+  LogOut, 
+  FileText, 
+  User, 
+  FolderKanban,
+  ListTodo,
+  CheckSquare,
+  Clock,
+  AlertTriangle,
+  MessageSquare
+} from "lucide-react";
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const { logout } = useUser();
@@ -36,6 +47,36 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
               <Button variant="ghost" className="w-full justify-start">
                 <FileText className="mr-2 h-4 w-4" />
                 Documents
+              </Button>
+            </Link>
+            <Link href="/client/tasks">
+              <Button variant="ghost" className="w-full justify-start">
+                <ListTodo className="mr-2 h-4 w-4" />
+                Tasks
+              </Button>
+            </Link>
+            <Link href="/client/quality-reviews">
+              <Button variant="ghost" className="w-full justify-start">
+                <CheckSquare className="mr-2 h-4 w-4" />
+                Quality Reviews
+              </Button>
+            </Link>
+            <Link href="/client/sla">
+              <Button variant="ghost" className="w-full justify-start">
+                <Clock className="mr-2 h-4 w-4" />
+                SLA Tracking
+              </Button>
+            </Link>
+            <Link href="/client/support">
+              <Button variant="ghost" className="w-full justify-start">
+                <AlertTriangle className="mr-2 h-4 w-4" />
+                Support
+              </Button>
+            </Link>
+            <Link href="/client/communication">
+              <Button variant="ghost" className="w-full justify-start">
+                <MessageSquare className="mr-2 h-4 w-4" />
+                Communication
               </Button>
             </Link>
             <Button 

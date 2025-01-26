@@ -21,6 +21,14 @@ import UserRoleManagement from "@/pages/admin/user-roles";
 import ClientOnboarding from "@/pages/admin/client-onboarding";
 import ServicePackages from "@/pages/admin/service-packages";
 import TasksPage from "@/pages/tasks";
+import WorkAllocation from "@/pages/admin/work-allocation";
+import QualityControl from "@/pages/admin/quality-control";
+import SLAManagement from "@/pages/admin/sla-management";
+import Escalations from "@/pages/admin/escalations";
+import ClientQualityReviews from "@/pages/client/quality-reviews";
+import ClientSLA from "@/pages/client/sla";
+import ClientSupport from "@/pages/client/support";
+import ClientCommunication from "@/pages/client/communication";
 
 function ProtectedRoute({ 
   component: Component, 
@@ -67,6 +75,10 @@ function Router() {
           <Route path="/admin/roles" component={() => <ProtectedRoute component={RoleManagement} isAdmin={true} />} />
           <Route path="/admin/user-roles" component={() => <ProtectedRoute component={UserRoleManagement} isAdmin={true} />} />
           <Route path="/admin/tasks" component={() => <ProtectedRoute component={TasksPage} isAdmin={true} />} />
+          <Route path="/admin/work-allocation" component={() => <ProtectedRoute component={WorkAllocation} isAdmin={true} />} />
+          <Route path="/admin/quality-control" component={() => <ProtectedRoute component={QualityControl} isAdmin={true} />} />
+          <Route path="/admin/sla-management" component={() => <ProtectedRoute component={SLAManagement} isAdmin={true} />} />
+          <Route path="/admin/escalations" component={() => <ProtectedRoute component={Escalations} isAdmin={true} />} />
         </>
       ) : (
         <>
@@ -76,6 +88,10 @@ function Router() {
           <Route path="/client/projects/:id" component={() => <ProtectedRoute component={ProjectDetails} isAdmin={false} />} />
           <Route path="/client/documents" component={() => <ProtectedRoute component={ClientDocuments} isAdmin={false} />} />
           <Route path="/client/tasks" component={() => <ProtectedRoute component={TasksPage} isAdmin={false} />} />
+          <Route path="/client/quality-reviews" component={() => <ProtectedRoute component={ClientQualityReviews} isAdmin={false} />} />
+          <Route path="/client/sla" component={() => <ProtectedRoute component={ClientSLA} isAdmin={false} />} />
+          <Route path="/client/support" component={() => <ProtectedRoute component={ClientSupport} isAdmin={false} />} />
+          <Route path="/client/communication" component={() => <ProtectedRoute component={ClientCommunication} isAdmin={false} />} />
         </>
       )}
       <Route path="/">
