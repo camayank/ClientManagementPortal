@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,6 +36,9 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
+  Paperclip,
+  MessageSquare,
+  Package,
 } from "lucide-react";
 import type { ClientOnboarding } from "@db/schema";
 
@@ -61,20 +64,71 @@ const STEP_LABELS: Record<typeof ONBOARDING_STEPS[number], string> = {
   completed: "Completed",
 };
 
+const STEP_REQUIREMENTS: Record<typeof ONBOARDING_STEPS[number], string[]> = {
+  initial_contact: [
+    "Schedule initial meeting",
+    "Gather basic business information",
+    "Identify key stakeholders",
+  ],
+  needs_assessment: [
+    "Complete business requirements form",
+    "Review current processes",
+    "Document pain points",
+    "Identify service package fit",
+  ],
+  proposal_sent: [
+    "Prepare custom service proposal",
+    "Include pricing details",
+    "Define service scope",
+    "Set timeline expectations",
+  ],
+  contract_review: [
+    "Send service agreement",
+    "Review terms and conditions",
+    "Address client questions",
+    "Collect signatures",
+  ],
+  document_collection: [
+    "Request required documents",
+    "Verify document completeness",
+    "Set up secure document storage",
+    "Create document checklist",
+  ],
+  service_setup: [
+    "Configure service package",
+    "Set up client portal access",
+    "Initialize client workspace",
+    "Configure notifications",
+  ],
+  training_scheduled: [
+    "Schedule training session",
+    "Prepare training materials",
+    "Send calendar invites",
+    "Confirm attendance",
+  ],
+  completed: [
+    "Final review of setup",
+    "Welcome email sent",
+    "Schedule follow-up",
+    "Activate services",
+  ],
+};
+
 export default function ClientOnboarding() {
   const [selectedClient, setSelectedClient] = useState<ClientOnboarding | null>(null);
+  const [showRequirements, setShowRequirements] = useState(false);
   const { toast } = useToast();
 
   const { data: onboardingClients, isLoading } = useQuery<ClientOnboarding[]>({
     queryKey: ["/api/admin/client-onboarding"],
   });
 
-  const updateOnboardingStatus = async (clientId: number, newStep: string) => {
+  const updateOnboardingStatus = async (clientId: number, newStep: string, notes?: string) => {
     try {
       const response = await fetch(`/api/admin/client-onboarding/${clientId}/step`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ step: newStep }),
+        body: JSON.stringify({ step: newStep, notes }),
         credentials: "include",
       });
 
@@ -151,6 +205,9 @@ export default function ClientOnboarding() {
                   <TableRow>
                     <TableHead>Client</TableHead>
                     <TableHead>Current Step</TableHead>
+                    <TableHead>Documents</TableHead>
+                    <TableHead>Communication</TableHead>
+                    <TableHead>Package</TableHead>
                     <TableHead>Started</TableHead>
                     <TableHead>Assigned To</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -166,12 +223,52 @@ export default function ClientOnboarding() {
                         {getStepBadge(client.currentStep)}
                       </TableCell>
                       <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="flex items-center gap-1"
+                        >
+                          <Paperclip className="w-4 h-4" />
+                          View
+                        </Button>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="flex items-center gap-1"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                          History
+                        </Button>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="flex items-center gap-1"
+                        >
+                          <Package className="w-4 h-4" />
+                          Assign
+                        </Button>
+                      </TableCell>
+                      <TableCell>
                         {new Date(client.startedAt).toLocaleDateString()}
                       </TableCell>
                       <TableCell>
                         {client.assignedUser?.username || "Unassigned"}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedClient(client);
+                            setShowRequirements(true);
+                          }}
+                        >
+                          Requirements
+                        </Button>
                         <Select
                           value={client.currentStep}
                           onValueChange={(value) =>
@@ -200,42 +297,65 @@ export default function ClientOnboarding() {
       </div>
 
       <Dialog
-        open={selectedClient !== null}
-        onOpenChange={() => setSelectedClient(null)}
+        open={showRequirements}
+        onOpenChange={() => {
+          setShowRequirements(false);
+          setSelectedClient(null);
+        }}
       >
-        <DialogContent>
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Update Onboarding Status</DialogTitle>
+            <DialogTitle>Step Requirements</DialogTitle>
             <DialogDescription>
-              Update the current onboarding step and add notes if needed.
+              Complete these requirements before moving to the next step
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <label>Current Step</label>
-              <Select defaultValue={selectedClient?.currentStep || ""}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select step" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ONBOARDING_STEPS.map((step) => (
-                    <SelectItem key={step} value={step}>
-                      {STEP_LABELS[step]}
-                    </SelectItem>
+          <div className="space-y-4">
+            {selectedClient && (
+              <>
+                <h3 className="text-lg font-semibold">
+                  {STEP_LABELS[selectedClient.currentStep]}
+                </h3>
+                <div className="space-y-2">
+                  {STEP_REQUIREMENTS[selectedClient.currentStep].map((req, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 p-2 border rounded-lg"
+                    >
+                      <input
+                        type="checkbox"
+                        className="form-checkbox h-4 w-4"
+                      />
+                      <span>{req}</span>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <label>Notes</label>
-              <Textarea
-                placeholder="Add notes about the current status..."
-                defaultValue={selectedClient?.notes || ""}
-              />
-            </div>
+                </div>
+                <div className="mt-4">
+                  <label className="block text-sm font-medium mb-2">
+                    Additional Notes
+                  </label>
+                  <Textarea
+                    placeholder="Add notes about the current status..."
+                    defaultValue={selectedClient?.notes || ""}
+                  />
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter>
-            <Button type="submit">Update Status</Button>
+            <Button
+              type="submit"
+              onClick={() =>
+                selectedClient &&
+                updateOnboardingStatus(
+                  selectedClient.id,
+                  selectedClient.currentStep,
+                  selectedClient.notes
+                )
+              }
+            >
+              Update Progress
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
