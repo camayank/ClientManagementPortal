@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketService } from "./websocket/server";
 import { setupAuth, hashPassword } from "./auth";
 import { db } from "@db";
-import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles } from "@db/schema";
+import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles, clientOnboarding } from "@db/schema";
 import multer from "multer";
 import { eq, and, sql } from "drizzle-orm";
 import { requirePermission } from "./middleware/check-permission";
@@ -212,7 +212,7 @@ export function registerRoutes(app: Express): Server {
 
       // Update the user's password
       const [updatedUser] = await db.update(users)
-        .set({ 
+        .set({
           password: hashedPassword,
           updatedAt: new Date()
         })
@@ -272,17 +272,34 @@ export function registerRoutes(app: Express): Server {
           role: 'client',
         })
         .returning();
+
       const [client] = await db.insert(clients)
         .values({
           userId: user.id,
           company,
-          status: 'active',
+          status: 'pending', // Changed from 'active' to 'pending' during onboarding
         })
         .returning();
-      res.json(client);
+
+      // Create onboarding record
+      const [onboarding] = await db.insert(clientOnboarding)
+        .values({
+          clientId: client.id,
+          currentStep: "initial_contact",
+          assignedTo: (req.user as any).id,
+        })
+        .returning();
+
+      res.json({
+        ...client,
+        onboarding,
+      });
     } catch (error) {
       console.error("Error creating client:", error);
-      res.status(500).send("Failed to create client");
+      res.status(500).json({
+        message: "Failed to create client",
+        error: (error as Error).message
+      });
     }
   });
 
@@ -1483,6 +1500,119 @@ export function registerRoutes(app: Express): Server {
     } catch (error) {
       console.error("Error updating user roles:", error);
       res.status(500).send("Failed to update user roles");
+    }
+  });
+
+  app.get("/api/admin/client-onboarding", requirePermission('clients', 'read'), async (req, res) => {
+    try {
+      const onboardingClients = await db.select({
+        id: clientOnboarding.id,
+        clientId: clientOnboarding.clientId,
+        currentStep: clientOnboarding.currentStep,
+        startedAt: clientOnboarding.startedAt,
+        completedAt: clientOnboarding.completedAt,
+        notes: clientOnboarding.notes,
+        client: clients,
+        assignedUser: users,
+      })
+        .from(clientOnboarding)
+        .leftJoin(clients, eq(clientOnboarding.clientId, clients.id))
+        .leftJoin(users, eq(clientOnboarding.assignedTo, users.id))
+        .orderBy(clientOnboarding.startedAt);
+
+      res.json(onboardingClients);
+    } catch (error) {
+      console.error("Error fetching onboarding clients:", error);
+      res.status(500).json({
+        message: "Failed to fetch onboarding clients",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.patch("/api/admin/client-onboarding/:id/step", requirePermission('clients', 'update'), async (req, res) => {
+    const { id } = req.params;
+    const { step, notes } = req.body;
+
+    try {
+      const [updatedOnboarding] = await db.update(clientOnboarding)
+        .set({
+          currentStep: step,
+          notes: notes || clientOnboarding.notes,
+          completedAt: step === "completed" ? new Date() : null,
+        })
+        .where(eq(clientOnboarding.id, parseInt(id)))
+        .returning();
+
+      if (!updatedOnboarding) {
+        return res.status(404).json({ message: "Onboarding record not found" });
+      }
+
+      // If this is a new client completing onboarding, update their status
+      if (step === "completed") {
+        await db.update(clients)
+          .set({ status: "active" })
+          .where(eq(clients.id, updatedOnboarding.clientId));
+
+        // Send notification through WebSocket
+        wsService.broadcastToAdmin({
+          type: 'notification',
+          payload: {
+            type: 'client_onboarding_completed',
+            message: `Client onboarding completed for ID: ${updatedOnboarding.clientId}`,
+          }
+        });
+      }
+
+      res.json(updatedOnboarding);
+    } catch (error) {
+      console.error("Error updating onboarding status:", error);
+      res.status(500).json({
+        message: "Failed to update onboarding status",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  // When creating a new client, automatically create an onboarding record
+  app.post("/api/clients", requirePermission('clients', 'create'), async (req, res) => {
+    const { company, email, password } = req.body;
+    try {
+      const [user] = await db.insert(users)
+        .values({
+          username: email,
+          password,
+          role: 'client',
+        })
+        .returning();
+
+      const [client] = await db.insert(clients)
+        .values({
+          userId: user.id,
+          company,
+          status: 'pending', // Changed from 'active' to 'pending' during onboarding
+        })
+        .returning();
+
+      // Create onboarding record
+      const [onboarding] = await db.insert(clientOnboarding)
+        .values({
+          clientId: client.id,
+          currentStep: "initial_contact",
+          assignedTo: (req.user as any).id,
+        })
+        .returning();
+
+      res.json({
+        ...client,
+        onboarding,
+      });
+    } catch (error) {
+      console.error("Error creating client:", error);
+      res.status(500).json({
+        message: "Failed to create client",
+        error: (error as Error).message
+      });
     }
   });
 

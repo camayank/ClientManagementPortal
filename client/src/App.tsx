@@ -18,6 +18,7 @@ import ProjectDetails from "@/pages/client/project-details";
 import AdminReports from "@/pages/admin/reports";
 import RoleManagement from "@/pages/role-management";
 import UserRoleManagement from "@/pages/admin/user-roles";
+import ClientOnboarding from "@/pages/admin/client-onboarding";
 
 function ProtectedRoute({ 
   component: Component, 
@@ -56,6 +57,7 @@ function Router() {
         <>
           <Route path="/admin" component={() => <ProtectedRoute component={AdminDashboard} isAdmin={true} />} />
           <Route path="/admin/clients" component={() => <ProtectedRoute component={AdminClients} isAdmin={true} />} />
+          <Route path="/admin/client-onboarding" component={() => <ProtectedRoute component={ClientOnboarding} isAdmin={true} />} />
           <Route path="/admin/documents" component={() => <ProtectedRoute component={AdminDocuments} isAdmin={true} />} />
           <Route path="/admin/credentials" component={() => <ProtectedRoute component={AdminCredentials} isAdmin={true} />} />
           <Route path="/admin/reports" component={() => <ProtectedRoute component={AdminReports} isAdmin={true} />} />

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, jsonb, date, numeric } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
 
@@ -36,7 +36,7 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").unique().notNull(),
   password: text("password").notNull(),
-  role: text("role", { 
+  role: text("role", {
     enum: [
       "admin",
       "client",
@@ -138,6 +138,79 @@ export const milestoneUpdates = pgTable("milestone_updates", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// New tables for client management
+export const servicePackages = pgTable("service_packages", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  features: jsonb("features"),
+  basePrice: numeric("base_price"),
+  billingCycle: text("billing_cycle", { enum: ["monthly", "quarterly", "annual"] }).notNull(),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const clientOnboarding = pgTable("client_onboarding", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id).notNull(),
+  currentStep: text("current_step", {
+    enum: [
+      "initial_contact",
+      "needs_assessment",
+      "proposal_sent",
+      "contract_review",
+      "document_collection",
+      "service_setup",
+      "training_scheduled",
+      "completed"
+    ]
+  }).default("initial_contact").notNull(),
+  startedAt: timestamp("started_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+  assignedTo: integer("assigned_to").references(() => users.id),
+  notes: text("notes"),
+});
+
+export const clientEngagement = pgTable("client_engagement", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id).notNull(),
+  lastContactDate: timestamp("last_contact_date"),
+  nextFollowUp: timestamp("next_follow_up"),
+  engagementScore: integer("engagement_score"),
+  riskLevel: text("risk_level", { enum: ["low", "medium", "high"] }).default("low"),
+  healthStatus: text("health_status", { enum: ["healthy", "attention_needed", "at_risk"] }).default("healthy"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const clientCommunication = pgTable("client_communication", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  type: text("type", {
+    enum: ["email", "call", "meeting", "document", "other"]
+  }).notNull(),
+  subject: text("subject").notNull(),
+  content: text("content"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const clientServices = pgTable("client_services", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id).notNull(),
+  packageId: integer("package_id").references(() => servicePackages.id).notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date"),
+  status: text("status", {
+    enum: ["active", "pending", "suspended", "terminated"]
+  }).default("pending"),
+  customizations: jsonb("customizations"),
+  billingFrequency: text("billing_frequency", {
+    enum: ["monthly", "quarterly", "annual"]
+  }).notNull(),
+  priceOverride: numeric("price_override"),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   roles: many(userRoles),
@@ -159,6 +232,10 @@ export const clientsRelations = relations(clients, ({ one, many }) => ({
   }),
   documents: many(documents),
   projects: many(projects),
+  onboarding: one(clientOnboarding),
+  engagement: one(clientEngagement),
+  communications: many(clientCommunication),
+  services: many(clientServices),
 }));
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
@@ -213,25 +290,6 @@ export const milestoneUpdatesRelations = relations(milestoneUpdates, ({ one }) =
   }),
 }));
 
-
-// Schema validation
-export const insertUserSchema = createInsertSchema(users);
-export const selectUserSchema = createSelectSchema(users);
-export const insertClientSchema = createInsertSchema(clients);
-export const selectClientSchema = createSelectSchema(clients);
-export const insertProjectSchema = createInsertSchema(projects);
-export const selectProjectSchema = createSelectSchema(projects);
-export const insertDocumentSchema = createInsertSchema(documents);
-export const selectDocumentSchema = createSelectSchema(documents);
-export const insertRoleSchema = createInsertSchema(roles);
-export const selectRoleSchema = createSelectSchema(roles);
-export const insertPermissionSchema = createInsertSchema(permissions);
-export const selectPermissionSchema = createSelectSchema(permissions);
-export const insertMilestoneSchema = createInsertSchema(milestones);
-export const selectMilestoneSchema = createSelectSchema(milestones);
-export const insertMilestoneUpdateSchema = createInsertSchema(milestoneUpdates);
-export const selectMilestoneUpdateSchema = createSelectSchema(milestoneUpdates);
-
 // New Project Template Table
 export const projectTemplates = pgTable("project_templates", {
   id: serial("id").primaryKey(),
@@ -271,15 +329,80 @@ export const projectTemplatesRelations = relations(projectTemplates, ({ many }) 
   projects: many(projects),
 }));
 
-// Add to existing relations
+export const servicePackagesRelations = relations(servicePackages, ({ many }) => ({
+  clientServices: many(clientServices),
+}));
 
-// Add schema validation
+export const clientOnboardingRelations = relations(clientOnboarding, ({ one }) => ({
+  client: one(clients, {
+    fields: [clientOnboarding.clientId],
+    references: [clients.id],
+  }),
+  assignedUser: one(users, {
+    fields: [clientOnboarding.assignedTo],
+    references: [users.id],
+  }),
+}));
+
+export const clientEngagementRelations = relations(clientEngagement, ({ one }) => ({
+  client: one(clients, {
+    fields: [clientEngagement.clientId],
+    references: [clients.id],
+  }),
+}));
+
+export const clientCommunicationRelations = relations(clientCommunication, ({ one }) => ({
+  client: one(clients, {
+    fields: [clientCommunication.clientId],
+    references: [clients.id],
+  }),
+  user: one(users, {
+    fields: [clientCommunication.userId],
+    references: [users.id],
+  }),
+}));
+
+export const clientServicesRelations = relations(clientServices, ({ one }) => ({
+  client: one(clients, {
+    fields: [clientServices.clientId],
+    references: [clients.id],
+  }),
+  package: one(servicePackages, {
+    fields: [clientServices.packageId],
+    references: [servicePackages.id],
+  }),
+}));
+
+
+// Schema validation
+export const insertUserSchema = createInsertSchema(users);
+export const selectUserSchema = createSelectSchema(users);
+export const insertClientSchema = createInsertSchema(clients);
+export const selectClientSchema = createSelectSchema(clients);
+export const insertProjectSchema = createInsertSchema(projects);
+export const selectProjectSchema = createSelectSchema(projects);
+export const insertDocumentSchema = createInsertSchema(documents);
+export const selectDocumentSchema = createSelectSchema(documents);
+export const insertRoleSchema = createInsertSchema(roles);
+export const selectRoleSchema = createSelectSchema(roles);
+export const insertPermissionSchema = createInsertSchema(permissions);
+export const selectPermissionSchema = createSelectSchema(permissions);
+export const insertMilestoneSchema = createInsertSchema(milestones);
+export const selectMilestoneSchema = createSelectSchema(milestones);
+export const insertMilestoneUpdateSchema = createInsertSchema(milestoneUpdates);
+export const selectMilestoneUpdateSchema = createSelectSchema(milestoneUpdates);
 export const insertProjectTemplateSchema = createInsertSchema(projectTemplates);
 export const selectProjectTemplateSchema = createSelectSchema(projectTemplates);
-
-// Add types
-export type ProjectTemplate = typeof projectTemplates.$inferSelect;
-export type NewProjectTemplate = typeof projectTemplates.$inferInsert;
+export const insertServicePackageSchema = createInsertSchema(servicePackages);
+export const selectServicePackageSchema = createSelectSchema(servicePackages);
+export const insertClientOnboardingSchema = createInsertSchema(clientOnboarding);
+export const selectClientOnboardingSchema = createSelectSchema(clientOnboarding);
+export const insertClientEngagementSchema = createInsertSchema(clientEngagement);
+export const selectClientEngagementSchema = createSelectSchema(clientEngagement);
+export const insertClientCommunicationSchema = createInsertSchema(clientCommunication);
+export const selectClientCommunicationSchema = createSelectSchema(clientCommunication);
+export const insertClientServicesSchema = createInsertSchema(clientServices);
+export const selectClientServicesSchema = createSelectSchema(clientServices);
 
 // Types
 export type User = typeof users.$inferSelect;
@@ -298,3 +421,15 @@ export type Milestone = typeof milestones.$inferSelect;
 export type NewMilestone = typeof milestones.$inferInsert;
 export type MilestoneUpdate = typeof milestoneUpdates.$inferSelect;
 export type NewMilestoneUpdate = typeof milestoneUpdates.$inferInsert;
+export type ProjectTemplate = typeof projectTemplates.$inferSelect;
+export type NewProjectTemplate = typeof projectTemplates.$inferInsert;
+export type ServicePackage = typeof servicePackages.$inferSelect;
+export type NewServicePackage = typeof servicePackages.$inferInsert;
+export type ClientOnboarding = typeof clientOnboarding.$inferSelect;
+export type NewClientOnboarding = typeof clientOnboarding.$inferInsert;
+export type ClientEngagement = typeof clientEngagement.$inferSelect;
+export type NewClientEngagement = typeof clientEngagement.$inferInsert;
+export type ClientCommunication = typeof clientCommunication.$inferSelect;
+export type NewClientCommunication = typeof clientCommunication.$inferInsert;
+export type ClientService = typeof clientServices.$inferSelect;
+export type NewClientService = typeof clientServices.$inferInsert;
