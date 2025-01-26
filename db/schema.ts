@@ -36,7 +36,18 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").unique().notNull(),
   password: text("password").notNull(),
-  role: text("role", { enum: ["admin", "client"] }).default("client").notNull(),
+  role: text("role", { 
+    enum: [
+      "admin",
+      "client",
+      "manager",
+      "partner",
+      "team_lead",
+      "staff_accountant",
+      "quality_reviewer",
+      "compliance_officer"
+    ]
+  }).default("client").notNull(),
   fullName: text("full_name"),
   email: text("email"),
   lastLogin: timestamp("last_login"),

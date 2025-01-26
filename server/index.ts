@@ -1,8 +1,10 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
+import { setupVite, log } from "./vite";
 import { apiLimiter, authLimiter, uploadLimiter } from "./middleware/rate-limit";
 import { corsMiddleware } from "./middleware/cors";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const app = express();
 
@@ -70,16 +72,28 @@ app.use((req, res, next) => {
     res.status(status).json({ 
       message,
       // Only include error details in development
-      ...(app.get("env") === "development" && { stack: err.stack }),
+      ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
     });
   });
 
-  // Serve static files in production
   if (process.env.NODE_ENV === "production") {
     console.log("Running in production mode");
-    serveStatic(app);
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const publicDir = path.resolve(__dirname, "public");
+    console.log("Serving static files from:", publicDir);
+
+    // Serve static files
+    app.use(express.static(publicDir));
+
+    // Serve index.html for all non-API routes
+    app.get("*", (req, res, next) => {
+      if (!req.path.startsWith("/api")) {
+        res.sendFile(path.resolve(publicDir, "index.html"));
+      } else {
+        next();
+      }
+    });
   } else {
-    // Setup Vite in development
     console.log("Running in development mode");
     await setupVite(app, server);
   }

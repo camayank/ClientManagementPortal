@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketService } from "./websocket/server";
 import { setupAuth, hashPassword } from "./auth";
 import { db } from "@db";
-import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates } from "@db/schema";
+import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles } from "@db/schema"; // Added roles, permissions, rolePermissions, userRoles
 import multer from "multer";
 import { eq, and, sql } from "drizzle-orm";
 import { requirePermission } from "./middleware/check-permission";
@@ -565,7 +565,6 @@ export function registerRoutes(app: Express): Server {
       res.status(500).send("Failed to fetch admin statistics");
     }
   });
-
 
 
   app.get("/api/admin/reports", requirePermission('reports', 'read'), async (req, res) => {
@@ -1181,6 +1180,163 @@ export function registerRoutes(app: Express): Server {
 
   // Call this after database is ready
   createDefaultTemplates().catch(console.error);
+
+  // Add these routes to the existing routes.ts file, inside the registerRoutes function
+
+  // Role Management Routes
+  app.get("/api/admin/roles", requirePermission('roles:read'), async (req, res) => {
+    try {
+      const rolesList = await db
+        .select({
+          id: roles.id,
+          name: roles.name,
+          description: roles.description,
+          createdAt: roles.createdAt,
+          permissions: permissions,
+        })
+        .from(roles)
+        .leftJoin(rolePermissions, eq(roles.id, rolePermissions.roleId))
+        .leftJoin(permissions, eq(rolePermissions.permissionId, permissions.id));
+
+      // Group permissions by role
+      const groupedRoles = rolesList.reduce((acc, curr) => {
+        const role = acc.find(r => r.id === curr.id);
+        if (role) {
+          if (curr.permissions) {
+            role.permissions.push(curr.permissions);
+          }
+        } else {
+          acc.push({
+            id: curr.id,
+            name: curr.name,
+            description: curr.description,
+            createdAt: curr.createdAt,
+            permissions: curr.permissions ? [curr.permissions] : [],
+          });
+        }
+        return acc;
+      }, [] as any[]);
+
+      res.json(groupedRoles);
+    } catch (error) {
+      console.error("Error fetching roles:", error);
+      res.status(500).send("Failed to fetch roles");
+    }
+  });
+
+  app.post("/api/admin/roles", requirePermission('roles:create'), async (req, res) => {
+    try {
+      const { name, description, permissions: permissionIds } = req.body;
+
+      const [existingRole] = await db
+        .select()
+        .from(roles)
+        .where(eq(roles.name, name))
+        .limit(1);
+
+      if (existingRole) {
+        return res.status(400).send("Role already exists");
+      }
+
+      const [newRole] = await db
+        .insert(roles)
+        .values({
+          name,
+          description,
+        })
+        .returning();
+
+      // Assign permissions
+      if (permissionIds?.length) {
+        await db.insert(rolePermissions)
+          .values(
+            permissionIds.map((permId: number) => ({
+              roleId: newRole.id,
+              permissionId: permId,
+            }))
+          );
+      }
+
+      res.json(newRole);
+    } catch (error) {
+      console.error("Error creating role:", error);
+      res.status(500).send("Failed to create role");
+    }
+  });
+
+  app.patch("/api/admin/roles/:id", requirePermission('roles:update'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, description, permissions: permissionIds } = req.body;
+
+      // Update role
+      const [updatedRole] = await db
+        .update(roles)
+        .set({
+          name,
+          description,
+        })
+        .where(eq(roles.id, parseInt(id)))
+        .returning();
+
+      // Update permissions
+      if (permissionIds) {
+        // Remove existing permissions
+        await db
+          .delete(rolePermissions)
+          .where(eq(rolePermissions.roleId, parseInt(id)));
+
+        // Add new permissions
+        if (permissionIds.length) {
+          await db
+            .insert(rolePermissions)
+            .values(
+              permissionIds.map((permId: number) => ({
+                roleId: parseInt(id),
+                permissionId: permId,
+              }))
+            );
+        }
+      }
+
+      res.json(updatedRole);
+    } catch (error) {
+      console.error("Error updating role:", error);
+      res.status(500).send("Failed to update role");
+    }
+  });
+
+  app.delete("/api/admin/roles/:id", requirePermission('roles:delete'), async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      // Check if role is assigned to any users
+      const [assignedRole] = await db
+        .select()
+        .from(userRoles)
+        .where(eq(userRoles.roleId, parseInt(id)))
+        .limit(1);
+
+      if (assignedRole) {
+        return res.status(400).send("Cannot delete role that is assigned to users");
+      }
+
+      // Delete role permissions first
+      await db
+        .delete(rolePermissions)
+        .where(eq(rolePermissions.roleId, parseInt(id)));
+
+      // Delete role
+      await db
+        .delete(roles)
+        .where(eq(roles.id, parseInt(id)));
+
+      res.json({ message: "Role deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting role:", error);
+      res.status(500).send("Failed to delete role");
+    }
+  });
 
   return httpServer;
 }
