@@ -28,7 +28,7 @@ const userSchema = z.object({
   fullName: z.string().min(1, "Full name is required"),
   email: z.string().email("Must be a valid email address"),
   role: z.enum([
-    "administrator",
+    "admin",
     "client",
     "manager",
     "partner",
@@ -178,7 +178,7 @@ export default function UserDialog({ open, onOpenChange }: UserDialogProps) {
                   <SelectValue placeholder="Select a role" />
                 </SelectTrigger>
                 <SelectContent className="w-full">
-                  <SelectItem value="administrator">Administrator</SelectItem>
+                  <SelectItem value="admin">Administrator</SelectItem>
                   <SelectItem value="client">Client</SelectItem>
                   <SelectItem value="manager">Manager</SelectItem>
                   <SelectItem value="partner">Partner</SelectItem>
