@@ -1009,6 +1009,89 @@ export function registerRoutes(app: Express): Server {
       });
     }
   });
+  app.get("/api/admin/service-features/:id", requirePermission('packages', 'read'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const [feature] = await db.select()
+        .from(serviceFeatures)
+        .where(eq(serviceFeatures.id, parseInt(id)))
+        .limit(1);
+
+      if (!feature) {
+        return res.status(404).json({
+          message: "Service feature not found"
+        });
+      }
+
+      res.json(feature);
+    } catch (error) {
+      console.error("Error fetching feature:", error);
+      res.status(500).json({
+        message: "Failed to fetch feature",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.patch("/api/admin/service-features/:id", requirePermission('packages', 'update'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, description, type, unit } = req.body;
+
+      if (!name || !type) {
+        return res.status(400).json({
+          message: "Name and type are required"
+        });
+      }
+
+      const [updatedFeature] = await db.update(serviceFeatures)
+        .set({
+          name,
+          description,
+          type,
+          unit,
+        })
+        .where(eq(serviceFeatures.id, parseInt(id)))
+        .returning();
+
+      if (!updatedFeature) {
+        return res.status(404).json({
+          message: "Service feature not found"
+        });
+      }
+
+      res.json(updatedFeature);
+    } catch (error) {
+      console.error("Error updating feature:", error);
+      res.status(500).json({
+        message: "Failed to update feature",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.delete("/api/admin/service-features/:id", requirePermission('packages', 'delete'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const [deletedFeature] = await db.delete(serviceFeatures)
+        .where(eq(serviceFeatures.id, parseInt(id)))
+        .returning();
+
+      if (!deletedFeature) {
+        return res.status(404).json({
+          message: "Service feature not found"
+        });
+      }
+
+      res.json({ message: "Service feature deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting feature:", error);
+      res.status(500).json({
+        message: "Failed to delete feature",
+        error: (error as Error).message
+      });
+    }
+  });
 
   app.get("/api/admin/pricing-rules", requirePermission('packages', 'read'), async (req, res) => {
     try {
