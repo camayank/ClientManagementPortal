@@ -18,7 +18,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -30,16 +32,47 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Package2, Plus } from "lucide-react";
-import type { ServicePackage } from "@db/schema";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import { Package2, Plus, Settings2, ArrowUpDown, ListChecks } from "lucide-react";
+import type {
+  ServicePackage,
+  ServiceFeature,
+  ServiceFeatureTier,
+  CustomPricingRule
+} from "@db/schema";
+import { FeatureTierDialog } from "@/components/feature-tier-dialog";
+
+interface PackageFormData extends Omit<ServicePackage, 'id' | 'createdAt' | 'updatedAt'> {
+  features: string[];
+}
 
 export default function ServicePackages() {
   const [selectedPackage, setSelectedPackage] = useState<ServicePackage | null>(null);
   const [isNewPackageDialogOpen, setIsNewPackageDialogOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("packages");
   const { toast } = useToast();
+  const [isFeatureTierDialogOpen, setIsFeatureTierDialogOpen] = useState(false);
+  const [selectedTier, setSelectedTier] = useState<ServiceFeatureTier | null>(null);
 
-  const { data: packages, isLoading } = useQuery<ServicePackage[]>({
+  const { data: packages, isLoading: packagesLoading } = useQuery<ServicePackage[]>({
     queryKey: ["/api/admin/service-packages"],
+  });
+
+  const { data: featureTiers, isLoading: tiersLoading } = useQuery<ServiceFeatureTier[]>({
+    queryKey: ["/api/admin/service-feature-tiers"],
+  });
+
+  const { data: features, isLoading: featuresLoading } = useQuery<ServiceFeature[]>({
+    queryKey: ["/api/admin/service-features"],
+  });
+
+  const { data: pricingRules, isLoading: rulesLoading } = useQuery<CustomPricingRule[]>({
+    queryKey: ["/api/admin/pricing-rules"],
   });
 
   const createPackageMutation = useMutation({
@@ -104,10 +137,33 @@ export default function ServicePackages() {
     },
   });
 
+  const createFeatureTierMutation = useMutation({
+    mutationFn: async (formData: FormData) => {
+      const response = await fetch("/api/admin/service-feature-tiers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.fromEntries(formData)),
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Feature tier created successfully",
+      });
+    },
+  });
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    
+
     if (selectedPackage) {
       await updatePackageMutation.mutateAsync({
         id: selectedPackage.id,
@@ -125,158 +181,325 @@ export default function ServicePackages() {
           <div>
             <h1 className="text-3xl font-bold">Service Packages</h1>
             <p className="text-muted-foreground">
-              Manage available service packages for clients
+              Manage service packages, features, and pricing rules
             </p>
           </div>
-          <Button onClick={() => setIsNewPackageDialogOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            New Package
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => setIsNewPackageDialogOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              New Package
+            </Button>
+          </div>
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Package2 className="h-5 w-5" />
-              Available Packages
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="flex justify-center py-8">
-                <span className="loading loading-spinner"></span>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Billing Cycle</TableHead>
-                    <TableHead>Base Price</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {packages?.map((pkg) => (
-                    <TableRow key={pkg.id}>
-                      <TableCell className="font-medium">{pkg.name}</TableCell>
-                      <TableCell>{pkg.description}</TableCell>
-                      <TableCell>{pkg.billingCycle}</TableCell>
-                      <TableCell>${pkg.basePrice}</TableCell>
-                      <TableCell>
-                        <Badge
-                          className={
-                            pkg.isActive
-                              ? "bg-green-100 text-green-800"
-                              : "bg-gray-100 text-gray-800"
-                          }
-                        >
-                          {pkg.isActive ? "Active" : "Inactive"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="outline"
-                          onClick={() => setSelectedPackage(pkg)}
-                        >
-                          Edit
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList>
+            <TabsTrigger value="packages">
+              <Package2 className="w-4 h-4 mr-2" />
+              Packages
+            </TabsTrigger>
+            <TabsTrigger value="features">
+              <ListChecks className="w-4 h-4 mr-2" />
+              Features & Tiers
+            </TabsTrigger>
+            <TabsTrigger value="pricing">
+              <Settings2 className="w-4 h-4 mr-2" />
+              Pricing Rules
+            </TabsTrigger>
+            <TabsTrigger value="comparison">
+              <ArrowUpDown className="w-4 h-4 mr-2" />
+              Package Comparison
+            </TabsTrigger>
+          </TabsList>
 
-      <Dialog
-        open={isNewPackageDialogOpen || selectedPackage !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setIsNewPackageDialogOpen(false);
-            setSelectedPackage(null);
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {selectedPackage ? "Edit Package" : "New Service Package"}
-            </DialogTitle>
-            <DialogDescription>
-              {selectedPackage
-                ? "Update the service package details"
-                : "Create a new service package for clients"}
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit}>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <label>Name</label>
-                <Input
-                  name="name"
-                  defaultValue={selectedPackage?.name}
-                  required
-                />
-              </div>
-              <div className="grid gap-2">
-                <label>Description</label>
-                <Textarea
-                  name="description"
-                  defaultValue={selectedPackage?.description || ""}
-                />
-              </div>
-              <div className="grid gap-2">
-                <label>Base Price</label>
-                <Input
-                  name="basePrice"
-                  type="number"
-                  step="0.01"
-                  defaultValue={selectedPackage?.basePrice || ""}
-                  required
-                />
-              </div>
-              <div className="grid gap-2">
-                <label>Billing Cycle</label>
-                <Select
-                  name="billingCycle"
-                  defaultValue={selectedPackage?.billingCycle || "monthly"}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select billing cycle" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                    <SelectItem value="quarterly">Quarterly</SelectItem>
-                    <SelectItem value="annual">Annual</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <label>Features (one per line)</label>
-                <Textarea
-                  name="features"
-                  defaultValue={
-                    selectedPackage?.features
-                      ? (selectedPackage.features as string[]).join("\n")
-                      : ""
-                  }
-                  placeholder="Enter features, one per line"
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="submit">
-                {selectedPackage ? "Update Package" : "Create Package"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+          <TabsContent value="packages">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Package2 className="h-5 w-5" />
+                  Available Packages
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {packagesLoading ? (
+                  <div className="flex justify-center py-8">
+                    <span className="loading loading-spinner"></span>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Feature Tier</TableHead>
+                        <TableHead>Billing Cycle</TableHead>
+                        <TableHead>Base Price</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {packages?.map((pkg) => (
+                        <TableRow key={pkg.id}>
+                          <TableCell className="font-medium">{pkg.name}</TableCell>
+                          <TableCell>{pkg.description}</TableCell>
+                          <TableCell>
+                            {featureTiers?.find(t => t.id === pkg.tierId)?.name || 'No Tier'}
+                          </TableCell>
+                          <TableCell>{pkg.billingCycle}</TableCell>
+                          <TableCell>${pkg.basePrice}</TableCell>
+                          <TableCell>
+                            <Badge
+                              className={
+                                pkg.isActive
+                                  ? "bg-green-100 text-green-800"
+                                  : "bg-gray-100 text-gray-800"
+                              }
+                            >
+                              {pkg.isActive ? "Active" : "Inactive"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="outline"
+                              onClick={() => setSelectedPackage(pkg)}
+                            >
+                              Edit
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="features">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle>Feature Tiers & Capabilities</CardTitle>
+                <Button onClick={() => setIsFeatureTierDialogOpen(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  New Tier
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {tiersLoading ? (
+                    <div className="flex justify-center py-8">
+                      <span className="loading loading-spinner"></span>
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Level</TableHead>
+                          <TableHead>Features</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {featureTiers?.map((tier) => (
+                          <TableRow key={tier.id}>
+                            <TableCell className="font-medium">{tier.name}</TableCell>
+                            <TableCell>{tier.description}</TableCell>
+                            <TableCell>{tier.level}</TableCell>
+                            <TableCell>
+                              {features
+                                ?.filter((f) => f.tierId === tier.id)
+                                .map((f) => f.name)
+                                .join(", ")}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="outline"
+                                onClick={() => {
+                                  setSelectedTier(tier);
+                                  setIsFeatureTierDialogOpen(true);
+                                }}
+                              >
+                                Edit
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <FeatureTierDialog
+              open={isFeatureTierDialogOpen}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setIsFeatureTierDialogOpen(false);
+                  setSelectedTier(null);
+                }
+              }}
+              selectedTier={selectedTier}
+            />
+          </TabsContent>
+
+          <TabsContent value="pricing">
+            <Card>
+              <CardHeader>
+                <CardTitle>Custom Pricing Rules</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {/* Pricing rules management interface */}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="comparison">
+            <Card>
+              <CardHeader>
+                <CardTitle>Package Comparison</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {/* Package comparison matrix */}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+
+        <Dialog
+          open={isNewPackageDialogOpen || selectedPackage !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setIsNewPackageDialogOpen(false);
+              setSelectedPackage(null);
+            }
+          }}
+        >
+          <DialogContent className="max-w-3xl max-h-[90vh]">
+            <DialogHeader>
+              <DialogTitle>
+                {selectedPackage ? "Edit Package" : "New Service Package"}
+              </DialogTitle>
+              <DialogDescription>
+                {selectedPackage
+                  ? "Update the service package details"
+                  : "Create a new service package for clients"}
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSubmit}>
+              <ScrollArea className="max-h-[60vh] px-1">
+                <div className="grid gap-4 py-4">
+                  <div className="grid gap-2">
+                    <label>Name</label>
+                    <Input
+                      name="name"
+                      defaultValue={selectedPackage?.name}
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <label>Description</label>
+                    <Textarea
+                      name="description"
+                      defaultValue={selectedPackage?.description || ""}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <label>Feature Tier</label>
+                    <Select
+                      name="tierId"
+                      defaultValue={selectedPackage?.tierId?.toString()}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a feature tier" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {featureTiers?.map((tier) => (
+                          <SelectItem key={tier.id} value={tier.id.toString()}>
+                            {tier.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <label>Base Price</label>
+                    <Input
+                      name="basePrice"
+                      type="number"
+                      step="0.01"
+                      defaultValue={selectedPackage?.basePrice || ""}
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <label>Billing Cycle</label>
+                    <Select
+                      name="billingCycle"
+                      defaultValue={selectedPackage?.billingCycle || "monthly"}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select billing cycle" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                        <SelectItem value="quarterly">Quarterly</SelectItem>
+                        <SelectItem value="annual">Annual</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <label>Features (one per line)</label>
+                    <Textarea
+                      name="features"
+                      defaultValue={
+                        selectedPackage?.features
+                          ? (selectedPackage.features as string[]).join("\n")
+                          : ""
+                      }
+                      placeholder="Enter features, one per line"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <label>Sort Order</label>
+                    <Input
+                      name="sortOrder"
+                      type="number"
+                      defaultValue={selectedPackage?.sortOrder || 0}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <label>Upgrade Path</label>
+                    <Select
+                      name="upgradeToPackageId"
+                      defaultValue={selectedPackage?.upgradeToPackageId?.toString()}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select upgrade path" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {packages?.filter(p => p.id !== selectedPackage?.id).map((pkg) => (
+                          <SelectItem key={pkg.id} value={pkg.id.toString()}>
+                            {pkg.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </ScrollArea>
+              <DialogFooter className="mt-6">
+                <Button type="submit">
+                  {selectedPackage ? "Update Package" : "Create Package"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
     </AdminLayout>
   );
 }

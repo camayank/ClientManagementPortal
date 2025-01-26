@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketService } from "./websocket/server";
 import { setupAuth, hashPassword } from "./auth";
 import { db } from "@db";
-import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles, clientOnboarding, servicePackages, clientServices, clientOnboardingDocuments, clientCommunications } from "@db/schema";
+import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles, clientOnboarding, servicePackages, clientServices, clientOnboardingDocuments, clientCommunications, serviceFeatureTiers, serviceFeatures, customPricingRules } from "@db/schema";
 import multer from "multer";
 import { eq, and, sql, desc } from "drizzle-orm";
 import { requirePermission } from "./middleware/check-permission";
@@ -658,6 +658,7 @@ export function registerRoutes(app: Express): Server {
   });
 
 
+
   app.get("/api/admin/reports", requirePermission('reports', 'read'), async (req, res) => {
     const { type, startDate, endDate } = req.query;
     if (!startDate || !endDate) {
@@ -845,444 +846,153 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.get("/api/documents/:id/download", requirePermission('documents', 'read'), async (req, res) => {
+
+  app.get("/api/admin/service-feature-tiers", requirePermission('packages', 'read'), async (req, res) => {
     try {
-      const docId = parseInt(req.params.id);
-      const [doc] = await db.select()
-        .from(documents)
-        .where(eq(documents.id, docId));
-      if (!doc) {
-        return res.status(404).send("Document not found");
-      }
-      if ((req.user as any).role !== 'admin') {
-        const [clientDoc] = await db.select()
-          .from(clients)
-          .where(eq(clients.userId, (req.user as any).id));
-        if (!clientDoc || doc.clientId !== clientDoc.id) {
-          return res.status(403).send("Access denied");
-        }
-      }
-      const filePath = path.join('uploads', doc.name);
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).send("File not found");
-      }
-      res.setHeader('Content-Type', doc.type);
-      res.setHeader('Content-Disposition', `attachment; filename="${doc.name}"`);
-      const fileStream = fs.createReadStream(filePath);
-      fileStream.pipe(res);
+      const tiers = await db.select().from(serviceFeatureTiers);
+      res.json(tiers);
     } catch (error) {
-      console.error("Download error:", error);
-      res.status(500).send("Failed to download file");
-    }
-  });
-
-  app.post("/api/register", async (req, res, next) => {
-    try {
-      const result = insertUserSchema.safeParse(req.body);
-      if (!result.success) {
-        return res
-          .status(400)
-          .send("Invalid input: " + result.error.issues.map(i => i.message).join(", "));
-      }
-      const { username, password } = result.data;
-      const [existingUser] = await db
-        .select()
-        .from        .from(users)
-        .where(eq(users.username, username))
-        .limit(1);
-
-      if (existingUser) {
-        return res.status(400).send("Username already exists");
-      }
-
-      // Create the user
-      const [newUser] = await db
-        .insert(users)
-        .values({
-          username,
-          password,
-          role: 'client'
-        })
-        .returning();
-
-      // If it's a client, create a client record
-      if (newUser.role === 'client') {
-        await db.insert(clients)
-          .values({
-            userId: newUser.id,
-            company: username,
-            status: 'active'
-          });
-      }
-
-      // Log the user in
-      req.login(newUser, (err) => {
-        if (err) {
-          return next(err);
-        }
-        return res.json({
-          message: "Registration successful",
-          user: { id: newUser.id, username: newUser.username }
-        });
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Service Package Management Routes
-  app.get("/api/admin/service-packages", requirePermission('packages', 'read'), async (req, res) => {
-    try {
-      const packages = await db.select().from(servicePackages);
-      res.json(packages);
-    } catch (error) {
-      console.error("Error fetching service packages:", error);
+      console.error("Error fetching feature tiers:", error);
       res.status(500).json({
-        message: "Failed to fetch service packages",
+        message: "Failed to fetch feature tiers",
         error: (error as Error).message
       });
     }
   });
 
-  app.post("/api/admin/service-packages", requirePermission('packages', 'create'), async (req, res) => {
+  app.post("/api/admin/service-feature-tiers", requirePermission('packages', 'create'), async (req, res) => {
     try {
-      const { name, description, basePrice, billingCycle, features } = req.body;
+      const { name, description, level } = req.body;
 
-      if (!name || !billingCycle) {
+      if (!name || typeof level !== 'number') {
         return res.status(400).json({
-          message: "Name and billing cycle are required"
+          message: "Name and level are required"
         });
       }
 
-      const [newPackage] = await db.insert(servicePackages)
+      const [newTier] = await db.insert(serviceFeatureTiers)
         .values({
           name,
           description,
-          basePrice: basePrice ? parseFloat(basePrice) : null,
-          billingCycle,
-          features: features || [],
+          level,
+        })
+        .returning();
+
+      res.json(newTier);
+    } catch (error) {
+      console.error("Error creating feature tier:", error);
+      res.status(500).json({
+        message: "Failed to create feature tier",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.patch("/api/admin/service-feature-tiers/:id", requirePermission('packages', 'update'), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, description, level } = req.body;
+
+      const [updatedTier] = await db.update(serviceFeatureTiers)
+        .set({
+          name,
+          description,
+          level,
+        })
+        .where(eq(serviceFeatureTiers.id, parseInt(id)))
+        .returning();
+
+      res.json(updatedTier);
+    } catch (error) {
+      console.error("Error updating feature tier:", error);
+      res.status(500).json({
+        message: "Failed to update feature tier",        error: (error as Error).message
+      });
+    }
+  });
+
+  app.get("/api/admin/service-features", requirePermission('packages', 'read'), async (req, res) => {
+    try {
+      const features = await db.select().from(serviceFeatures);
+      res.json(features);
+    } catch (error) {
+      console.error("Error fetching features:", error);
+      res.status(500).json({
+        message: "Failed to fetch features",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.post("/api/admin/service-features", requirePermission('packages', 'create'), async (req, res) => {
+    try {
+      const { name, description, type, unit } = req.body;
+
+      if (!name || !type) {
+        return res.status(400).json({
+          message: "Name and type are required"
+        });
+      }
+
+      const [newFeature] = await db.insert(serviceFeatures)
+        .values({
+          name,
+          description,
+          type,
+          unit,
+        })
+        .returning();
+
+      res.json(newFeature);
+    } catch (error) {
+      console.error("Error creating feature:", error);
+      res.status(500).json({
+        message: "Failed to create feature",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.get("/api/admin/pricing-rules", requirePermission('packages', 'read'), async (req, res) => {
+    try {
+      const rules = await db.select().from(customPricingRules);
+      res.json(rules);
+    } catch (error) {
+      console.error("Error fetching pricing rules:", error);
+      res.status(500).json({
+        message: "Failed to fetch pricing rules",
+        error: (error as Error).message
+      });
+    }
+  });
+
+  app.post("/api/admin/pricing-rules", requirePermission('packages', 'create'), async (req, res) => {
+    try {
+      const { packageId, name, description, condition, adjustment, priority } = req.body;
+
+      if (!packageId || !name || !condition || !adjustment) {
+        return res.status(400).json({
+          message: "Package ID, name, condition, and adjustment are required"
+        });
+      }
+
+      const [newRule] = await db.insert(customPricingRules)
+        .values({
+          packageId: parseInt(packageId),
+          name,
+          description,
+          condition,
+          adjustment,
+          priority: priority || 0,
           isActive: true,
         })
         .returning();
 
-      res.json(newPackage);
+      res.json(newRule);
     } catch (error) {
-      console.error("Error creating service package:", error);
+      console.error("Error creating pricing rule:", error);
       res.status(500).json({
-        message: "Failed to create service package",
-        error: (error as Error).message
-      });
-    }
-  });
-
-  app.patch("/api/admin/service-packages/:id", requirePermission('packages', 'update'), async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { name, description, basePrice, billingCycle, features, isActive } = req.body;
-
-      const [existingPackage] = await db.select()
-        .from(servicePackages)
-        .where(eq(servicePackages.id, parseInt(id)))
-        .limit(1);
-
-      if (!existingPackage) {
-        return res.status(404).json({ message: "Service package not found" });
-      }
-
-      const [updatedPackage] = await db.update(servicePackages)
-        .set({
-          name: name || existingPackage.name,
-          description: description ?? existingPackage.description,
-          basePrice: basePrice ? parseFloat(basePrice) : existingPackage.basePrice,
-          billingCycle: billingCycle || existingPackage.billingCycle,
-          features: features || existingPackage.features,
-          isActive: isActive ?? existingPackage.isActive,
-        })
-        .where(eq(servicePackages.id, parseInt(id)))
-        .returning();
-
-      res.json(updatedPackage);
-    } catch (error) {
-      console.error("Error updating service package:", error);
-      res.status(500).json({
-        message: "Failed to update service package",
-        error: (error as Error).message
-      });
-    }
-  });
-
-  app.get("/api/admin/service-packages/:id/clients", requirePermission('packages', 'read'), async (req, res) => {
-    try {
-      const { id } = req.params;
-      const clients = await db.select({
-        id: clientServices.id,
-        clientId: clientServices.clientId,
-        startDate: clientServices.startDate,
-        endDate: clientServices.endDate,
-        status: clientServices.status,
-        client: {
-          id: clients.id,
-          company: clients.company,
-          status: clients.status,
-        }
-      })
-        .from(clientServices)
-        .where(eq(clientServices.packageId, parseInt(id)))
-        .leftJoin(clients, eq(clientServices.clientId, clients.id));
-
-      res.json(clients);
-    } catch (error) {
-      console.error("Error fetching package clients:", error);
-      res.status(500).json({
-        message: "Failed to fetch package clients",
-        error: (error as Error).message
-      });
-    }
-  });
-  // Document tracking for onboarding
-  app.post("/api/admin/client-onboarding/:id/documents", requirePermission('onboarding', 'update'), async (req, res) => {
-    const { id } = req.params;
-    const { documentType, name, required } = req.body;
-
-    try {
-      const [document] = await db.insert(clientOnboardingDocuments)
-        .values({
-          onboardingId: parseInt(id),
-          documentType,
-          name,
-          required,
-          status: 'pending',
-          uploadedAt: null
-        })
-        .returning();
-
-      res.json(document);
-    } catch (error) {
-      console.error("Error adding onboarding document:", error);
-      res.status(500).json({
-        message: "Failed to add document requirement",
-        error: (error as Error).message
-      });
-    }
-  });
-
-  app.get("/api/admin/client-onboarding/:id/documents", requirePermission('onboarding', 'read'), async (req, res) => {
-    const { id } = req.params;
-    try {
-      const documents = await db.select()
-        .from(clientOnboardingDocuments)
-        .where(eq(clientOnboardingDocuments.onboardingId, parseInt(id)));
-
-      res.json(documents);
-    } catch (error) {
-      console.error("Error fetching onboarding documents:", error);
-      res.status(500).json({
-        message: "Failed to fetch documents",
-        error: (error as Error).message
-      });
-    }
-  });
-
-  // Communication history
-  app.post("/api/admin/client-onboarding/:id/communications", requirePermission('onboarding', 'update'), async (req, res) => {
-    const { id } = req.params;
-    const { type, message, direction } = req.body;
-    const user = req.user as any;
-
-    try {
-      const [communication] = await db.insert(clientCommunications)
-        .values({
-          onboardingId: parseInt(id),
-          type,
-          message,
-          direction,
-          userId: user.id,
-          timestamp: new Date()
-        })
-        .returning();
-
-      res.json(communication);
-    } catch (error) {
-      console.error("Error adding communication:", error);
-      res.status(500).json({
-        message: "Failed to add communication",
-        error: (error as Error).message
-      });
-    }
-  });
-
-  app.get("/api/admin/client-onboarding/:id/communications", requirePermission('onboarding', 'read'), async (req, res) => {
-    const { id } = req.params;
-    try {
-      const communications = await db.select({
-        id: clientCommunications.id,
-        type: clientCommunications.type,
-        message: clientCommunications.message,
-        direction: clientCommunications.direction,
-        timestamp: clientCommunications.timestamp,
-        user: users
-      })
-        .from(clientCommunications)
-        .leftJoin(users, eq(clientCommunications.userId, users.id))
-        .where(eq(clientCommunications.onboardingId, parseInt(id)))
-        .orderBy(desc(clientCommunications.timestamp));
-
-      res.json(communications);
-    } catch (error) {
-      console.error("Error fetching communications:", error);
-      res.status(500).json({
-        message: "Failed to fetch communications",
-        error: (error as Error).message
-      });
-    }
-  });
-
-  // Service package assignment
-  app.post("/api/admin/client-onboarding/:id/assign-package", requirePermission('onboarding', 'update'), async (req, res) => {
-    const { id } = req.params;
-    const { packageId } = req.body;
-
-    try {
-      // Get the client ID from onboarding record
-      const [onboarding] = await db.select()
-        .from(clientOnboarding)
-        .where(eq(clientOnboarding.id, parseInt(id)))
-        .limit(1);
-
-      if (!onboarding) {
-        return res.status(404).json({ message: "Onboarding record not found" });
-      }
-
-      // Assign the service package to the client
-      const [clientService] = await db.insert(clientServices)
-        .values({
-          clientId: onboarding.clientId,
-          packageId: parseInt(packageId),
-          startDate: new Date(),
-          status: 'pending'
-        })
-        .returning();
-
-      // Update onboarding record
-      await db.update(clientOnboarding)
-        .set({
-          currentStep: 'service_setup',
-          notes: `Service package ${packageId} assigned`
-        })
-        .where(eq(clientOnboarding.id, parseInt(id)));
-
-      res.json(clientService);
-    } catch (error) {
-      console.error("Error assigning package:", error);
-      res.status(500).json({
-        message: "Failed to assign package",
-        error: (error as Error).message
-      });
-    }
-  });
-  // Add client onboarding routes
-  app.get("/api/admin/client-onboarding", requirePermission('clients', 'read'), async (req, res) => {
-    try {
-      const onboardingList = await db.select({
-        id: clientOnboarding.id,
-        clientId: clientOnboarding.clientId,
-        currentStep: clientOnboarding.currentStep,
-        startedAt: clientOnboarding.startedAt,
-        completedAt: clientOnboarding.completedAt,
-        assignedTo: clientOnboarding.assignedTo,
-        notes: clientOnboarding.notes,
-        client: {
-          id: clients.id,
-          company: clients.company,
-          status: clients.status,
-        },
-        assignedUser: {
-          id: users.id,
-          username: users.username,
-        },
-      })
-        .from(clientOnboarding)
-        .leftJoin(clients, eq(clientOnboarding.clientId, clients.id))
-        .leftJoin(users, eq(clientOnboarding.assignedTo, users.id));
-      res.json(onboardingList);
-    } catch (error) {
-      console.error("Error fetching client onboarding:", error);
-      res.status(500).json({
-        message: "Failed to fetch client onboarding",
-        error: (error as Error).message
-      });
-    }
-  });
-
-  app.patch("/api/admin/client-onboarding/:id/step", requirePermission('clients', 'update'), async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { step, notes } = req.body;
-
-      const [updatedOnboarding] = await db.update(clientOnboarding)
-        .set({
-          currentStep: step,
-          notes: notes,
-          ...(step === 'completed' ? { completedAt: new Date() } : {}),
-        })
-        .where(eq(clientOnboarding.id, parseInt(id)))
-        .returning();
-
-      res.json(updatedOnboarding);
-    } catch (error) {
-      console.error("Error updating onboarding step:", error);
-      res.status(500).json({
-        message: "Failed to update onboarding step",
-        error: (error as Error).message
-      });
-    }
-  });
-
-  app.post("/api/admin/client-onboarding/:id/documents", requirePermission('documents', 'create'), upload.single('file'), async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { documentType } = req.body;
-      const file = req.file;
-
-      if (!file) {
-        return res.status(400).send("No file uploaded");
-      }
-
-      const [onboardingDoc] = await db.insert(clientOnboardingDocuments)
-        .values({
-          clientOnboardingId: parseInt(id),
-          documentType,
-          fileName: file.originalname,
-          fileSize: file.size,
-          mimeType: file.mimetype,
-          uploadedBy: (req.user as any).id,
-          metadata: {
-            path: file.path,
-          },
-        })
-        .returning();
-
-      res.json(onboardingDoc);
-    } catch (error) {
-      console.error("Error uploading document:", error);
-      res.status(500).json({
-        message: "Failed to upload document",
-        error: (error as Error).message
-      });
-    }
-  });
-
-  app.get("/api/admin/client-onboarding/documents/:id", requirePermission('documents', 'read'), async (req, res) => {
-    try {
-      const { id } = req.params;
-      const docs = await db.select()
-        .from(clientOnboardingDocuments)
-        .where(eq(clientOnboardingDocuments.clientOnboardingId, parseInt(id)));
-      res.json(docs);
-    } catch (error) {
-      console.error("Error fetching documents:", error);
-      res.status(500).json({
-        message: "Failed to fetch documents",
+        message: "Failed to create pricing rule",
         error: (error as Error).message
       });
     }
