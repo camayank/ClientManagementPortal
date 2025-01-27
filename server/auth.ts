@@ -57,6 +57,7 @@ export function setupAuth(app: Express) {
         return done(null, false, { message: "Invalid credentials" });
       }
 
+      console.log(`[Auth] Found user: ${username}, comparing passwords`);
       const isValidPassword = await comparePassword(password, user.password);
       console.log(`[Auth] Password validation result for ${username}:`, isValidPassword);
 
@@ -167,11 +168,4 @@ export function setupAuth(app: Express) {
       fullName: user.fullName
     });
   });
-  //JWT and OAuth parts removed due to irrelevance to the main issue
 }
-
-const userInputSchema = z.object({
-  username: z.string().email("Must be a valid email"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-  role: z.enum(["admin", "client", "team_member", "partner"]).default("client"),
-});
