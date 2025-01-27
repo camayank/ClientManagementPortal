@@ -97,6 +97,51 @@ export function setupAuth(app: Express) {
     }
   });
 
+  // Register route
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const { email, password, fullName, role = "client" } = req.body;
+
+      // Check if user exists
+      const existingUser = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1);
+
+      if (existingUser.length > 0) {
+        return res.status(400).json({ message: "Email already registered" });
+      }
+
+      // Hash password
+      const hashedPassword = await hashPassword(password);
+
+      // Create user
+      const [user] = await db
+        .insert(users)
+        .values({
+          email,
+          password: hashedPassword,
+          fullName,
+          role
+        })
+        .returning();
+
+      res.status(201).json({
+        message: "User registered successfully",
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          fullName: user.fullName
+        }
+      });
+    } catch (error) {
+      console.error("Registration error:", error);
+      res.status(500).json({ message: "Error registering user" });
+    }
+  });
+
   // Login route
   app.post("/api/auth/login", (req, res, next) => {
     const validationResult = loginSchema.safeParse(req.body);
@@ -119,11 +164,6 @@ export function setupAuth(app: Express) {
         if (err) {
           return res.status(500).json({ message: "Login failed" });
         }
-
-        // Update last login timestamp
-        await db.update(users)
-          .set({ lastLogin: new Date() })
-          .where(eq(users.id, user.id));
 
         // Send user data without sensitive information
         res.json({
@@ -151,7 +191,7 @@ export function setupAuth(app: Express) {
   // Get current user
   app.get("/api/auth/user", (req, res) => {
     if (!req.user) {
-      return res.status(401).send("Not authenticated");
+      return res.status(401).json({ message: "Not authenticated" });
     }
 
     const user = req.user as any;

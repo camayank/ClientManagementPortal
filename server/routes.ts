@@ -6,31 +6,19 @@ import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { Strategy as LinkedInStrategy } from "passport-linkedin-oauth2";
 import { db } from "@db";
 import { 
-  users, 
-  clients,
-  documents,
-  projects,
-  milestones,
-  milestoneUpdates,
-  roles,
-  serviceFeatureTiers,
-  serviceFeatures,
-  serviceTierFeatures,
+  users,
+  clients, 
   clientOnboarding,
-  customPricingRules,
-  taskCategories,
-  tasks,
-  taskStatusHistory,
-  taskDependencies
+  projects 
 } from "@db/schema";
-import { eq, ilike, and, sql, desc, or } from "drizzle-orm";
+import { eq, ilike } from "drizzle-orm";
 import multer from "multer";
-import path from "path";
-import fs from "fs";
 import { hashPassword } from "./auth";
 import { WebSocketService } from "./websocket/server";
 import { requirePermission } from "./middleware/check-permission";
 import { parseISO, subDays, format } from 'date-fns';
+import path from "path";
+import fs from "fs";
 
 export let wsService: WebSocketService;
 
@@ -46,8 +34,6 @@ export function registerRoutes(app: Express): Server {
       callbackURL: "/api/auth/google/callback",
     }, async (accessToken, refreshToken, profile, done) => {
       try {
-        console.log("[OAuth] Google login attempt:", profile.emails?.[0]?.value);
-
         let [user] = await db
           .select()
           .from(users)
@@ -59,7 +45,6 @@ export function registerRoutes(app: Express): Server {
           const [newUser] = await db.insert(users)
             .values({
               email: profile.emails?.[0]?.value || '',
-              username: profile.emails?.[0]?.value || '',
               password: await hashPassword(Math.random().toString(36)),
               fullName: profile.displayName,
               role: 'client',
@@ -158,7 +143,7 @@ export function registerRoutes(app: Express): Server {
           clientId = clientRecord.id;
         }
       }
-      const [newDoc] = await db.insert(documents)
+      const [newDoc] = await db.insert(projects)
         .values({
           name: req.file.originalname,
           type: req.file.mimetype,
@@ -173,14 +158,14 @@ export function registerRoutes(app: Express): Server {
       }
       const permanentPath = path.join('uploads', newDoc.id.toString() + '_' + req.file.originalname);
       fs.renameSync(req.file.path, permanentPath);
-      await db.update(documents)
+      await db.update(projects)
         .set({
           metadata: {
             path: permanentPath,
             originalName: req.file.originalname
           }
         })
-        .where(eq(documents.id, newDoc.id));
+        .where(eq(projects.id, newDoc.id));
       if (user.role === 'client') {
         wsService.broadcastToAdmin({
           type: 'notification',
@@ -634,17 +619,17 @@ export function registerRoutes(app: Express): Server {
     try {
       const user = req.user as any;
       let query = db.select({
-        id: documents.id,
-        name: documents.name,
-        type: documents.type,
-        size: documents.size,
-        createdAt: documents.createdAt,
-        updatedAt: documents.updatedAt,
-        metadata: documents.metadata,
-        uploadedBy: documents.uploadedBy,
-        clientId: documents.clientId,
-        projectId: documents.projectId,
-      }).from(documents);
+        id: projects.id,
+        name: projects.name,
+        type: projects.type,
+        size: projects.size,
+        createdAt: projects.createdAt,
+        updatedAt: projects.updatedAt,
+        metadata: projects.metadata,
+        uploadedBy: projects.uploadedBy,
+        clientId: projects.clientId,
+        projectId: projects.projectId,
+      }).from(projects);
       if (user.role === 'client') {
         const [clientRecord] = await db.select()
           .from(clients)
@@ -653,7 +638,7 @@ export function registerRoutes(app: Express): Server {
         if (!clientRecord) {
           return res.status(404).send("Client record not found");
         }
-        query = query.where(eq(documents.clientId, clientRecord.id));
+        query = query.where(eq(projects.clientId, clientRecord.id));
       }
       const docs = await query;
       res.json(docs);
@@ -664,7 +649,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   app.get("/api/documents/all", requirePermission('documents', 'read'), async (req, res) => {
-    const docs = await db.select().from(documents);
+    const docs = await db.select().from(projects);
     res.json(docs);
   });
 
@@ -672,8 +657,8 @@ export function registerRoutes(app: Express): Server {
     try {
       const docId = parseInt(req.params.id);
       const [doc] = await db.select()
-        .from(documents)
-        .where(eq(documents.id, docId));
+        .from(projects)
+        .where(eq(projects.id, docId));
       if (!doc) {
         return res.status(404).send("Document not found");
       }
@@ -704,8 +689,8 @@ export function registerRoutes(app: Express): Server {
     try {
       const docId = parseInt(req.params.id);
       const [doc] = await db.select()
-        .from(documents)
-        .where(eq(documents.id, docId));
+        .from(projects)
+        .where(eq(projects.id, docId));
       if (!doc) {
         return res.status(404).send("Document not found");
       }
@@ -784,16 +769,16 @@ export function registerRoutes(app: Express): Server {
               totalDocuments: sql<number>`count(*)`,
               totalSize: sql<number>`sum(size)`,
             })
-            .from(documents)
+            .from(projects)
             .where(sql`created_at between ${start} and ${end}`);
           const documentTypes = await db
             .select({
-              type: documents.type,
+              type: projects.type,
               count: sql<number>`count(*)`,
             })
-            .from(documents)
+            .from(projects)
             .where(sql`created_at between ${start} and ${end}`)
-            .groupBy(documents.type);
+            .groupBy(projects.type);
           res.json({
             totalDocuments: documentStats.totalDocuments,
             totalSize: documentStats.totalSize,
@@ -869,14 +854,14 @@ export function registerRoutes(app: Express): Server {
             .from(clients);
           const clientActivity = await db
             .select({
-              date: sql<string>`date_trunc('day', documents.created_at)`,
+              date: sql<string>`date_trunc('day', projects.created_at)`,
               uploads: sql<number>`count(*)`,
             })
-            .from(documents)
-            .innerJoin(clients, eq(documents.clientId, clients.id))
-            .where(sql`documents.created_at between ${start} and ${end}`)
-            .groupBy(sql`date_trunc('day', documents.created_at)`)
-            .orderBy(sql`date_trunc('day', documents.created_at)`);
+            .from(projects)
+            .innerJoin(clients, eq(projects.clientId, clients.id))
+            .where(sql`projects.created_at between ${start} and ${end}`)
+            .groupBy(sql`date_trunc('day', projects.created_at)`)
+            .orderBy(sql`date_trunc('day', projects.created_at)`);
           res.json({
             totalClients: clientStats.totalClients,
             activeClients: clientStats.activeClients,
@@ -913,16 +898,16 @@ export function registerRoutes(app: Express): Server {
         case 'documents': {
           data = await db
             .select({
-              id: documents.id,
-              name: documents.name,
-              type: documents.type,
-              size: documents.size,
-              createdAt: documents.createdAt,
+              id: projects.id,
+              name: projects.name,
+              type: projects.type,
+              size: projects.size,
+              createdAt: projects.createdAt,
               uploadedBy: users.username,
             })
-            .from(documents)
-            .leftJoin(users, eq(documents.uploadedBy, users.id))
-            .where(sql`documents.created_at between ${start} and ${end}`);
+            .from(projects)
+            .leftJoin(users, eq(projects.uploadedBy, users.id))
+            .where(sql`projects.created_at between ${start} and ${end}`);
           headers = ['ID', 'Name', 'Type', 'Size', 'Created At', 'Uploaded By'];
           break;
         }
@@ -936,7 +921,7 @@ export function registerRoutes(app: Express): Server {
               lastLogin: users.lastLogin,
             })
             .from(users)
-            .where(sql`created_at between ${start} and ${end}`);
+            .where(sql`created_at between ${start} and${end}`);
           headers = ['ID', 'Username', 'Role', 'Created At', 'Last Login'];
           break;
         }
