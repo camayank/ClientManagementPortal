@@ -3,38 +3,75 @@ import { Strategy as LocalStrategy } from "passport-local";
 import { type Express } from "express";
 import session from "express-session";
 import createMemoryStore from "memorystore";
-import { users } from "@db/schema";
+import { users, roles, userRoles, type User } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import { z } from "zod";
+import crypto from "crypto";
 
 const SALT_ROUNDS = 10;
+const RESET_TOKEN_EXPIRES = 60 * 60 * 1000; // 1 hour in milliseconds
 
-// Form validation schema
-const loginSchema = z.object({
-  email: z.string().email("Please enter a valid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+// Create schema for user input validation
+const userInputSchema = z.object({
+  username: z.string().min(3),
+  password: z.string().min(6),
+  role: z.enum(["admin", "client"]).default("client"),
 });
+
+const passwordResetRequestSchema = z.object({
+  username: z.string().email()
+});
+
+const passwordResetSchema = z.object({
+  token: z.string(),
+  newPassword: z.string().min(6)
+});
+
+// Define a type that extends the base User type from schema
+type AuthUser = Omit<User, 'password'> & {
+  roles?: string[];
+};
+
+declare global {
+  namespace Express {
+    interface User extends AuthUser {}
+  }
+}
+
+// Store reset tokens in memory (in production, use Redis or similar)
+const passwordResetTokens = new Map<string, { username: string, expires: number }>();
 
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, SALT_ROUNDS);
 }
 
+export async function comparePassword(password: string, hash: string): Promise<boolean> {
+  try {
+    return await bcrypt.compare(password, hash);
+  } catch (error) {
+    console.error('Error comparing passwords:', error);
+    return false;
+  }
+}
+
+function generateResetToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
 export function setupAuth(app: Express) {
   const MemoryStore = createMemoryStore(session);
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.JWT_SECRET || 'your-secret-key',
+    secret: process.env.REPL_ID || "client-portal-secret",
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: app.get("env") === "production",
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      httpOnly: true,
-      sameSite: 'lax'
+      secure: app.get("env") === "production",
     },
     store: new MemoryStore({
-      checkPeriod: 86400000 // 24 hours
+      checkPeriod: 86400000, // prune expired entries every 24h
     }),
   };
 
@@ -46,36 +83,61 @@ export function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
-  // Configure LocalStrategy
-  passport.use(new LocalStrategy({
-    usernameField: 'email',
-    passwordField: 'password'
-  }, async (email, password, done) => {
-    try {
-      // Find user
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.email, email))
-        .limit(1);
+  passport.use(
+    new LocalStrategy(async (username, password, done) => {
+      try {
+        console.log("Attempting login for username:", username);
+        const [user] = await db
+          .select()
+          .from(users)
+          .where(eq(users.username, username))
+          .limit(1);
 
-      if (!user) {
-        return done(null, false, { message: "Invalid email or password" });
+        if (!user) {
+          console.log("User not found");
+          return done(null, false, { message: "Incorrect username." });
+        }
+
+        console.log("Found user:", { ...user, password: '[REDACTED]' });
+
+        const isValidPassword = await comparePassword(password, user.password);
+        console.log("Password validation result:", isValidPassword);
+
+        if (!isValidPassword) {
+          return done(null, false, { message: "Incorrect password." });
+        }
+
+        // Get user roles
+        const userRolesData = await db
+          .select({
+            roleName: roles.name,
+          })
+          .from(userRoles)
+          .innerJoin(roles, eq(userRoles.roleId, roles.id))
+          .where(eq(userRoles.userId, user.id));
+
+        console.log("User roles:", userRolesData);
+
+        const userWithRoles: AuthUser = {
+          ...user,
+          password: undefined,
+          roles: userRolesData.map(r => r.roleName),
+        };
+
+        // Update last login timestamp
+        await db.update(users)
+          .set({ lastLogin: new Date() })
+          .where(eq(users.id, user.id));
+
+        return done(null, userWithRoles);
+      } catch (err) {
+        console.error("Login error:", err);
+        return done(err);
       }
+    })
+  );
 
-      // Verify password
-      const isValid = await bcrypt.compare(password, user.password);
-      if (!isValid) {
-        return done(null, false, { message: "Invalid email or password" });
-      }
-
-      return done(null, user);
-    } catch (err) {
-      return done(err);
-    }
-  }));
-
-  passport.serializeUser((user: any, done) => {
+  passport.serializeUser((user: Express.User, done) => {
     done(null, user.id);
   });
 
@@ -91,115 +153,148 @@ export function setupAuth(app: Express) {
         return done(null, false);
       }
 
-      done(null, user);
+      // Get user roles
+      const userRolesData = await db
+        .select({
+          roleName: roles.name,
+        })
+        .from(userRoles)
+        .innerJoin(roles, eq(userRoles.roleId, roles.id))
+        .where(eq(userRoles.userId, user.id));
+
+      const userWithRoles: AuthUser = {
+        ...user,
+        password: undefined,
+        roles: userRolesData.map(r => r.roleName),
+      };
+
+      done(null, userWithRoles);
     } catch (err) {
+      console.error("Deserialize error:", err);
       done(err);
     }
   });
 
-  // Register route
-  app.post("/api/auth/register", async (req, res) => {
+  app.post("/api/request-password-reset", async (req, res) => {
     try {
-      const { email, password, fullName, role = "client" } = req.body;
-
-      // Check if user exists
-      const existingUser = await db
-        .select()
-        .from(users)
-        .where(eq(users.email, email))
-        .limit(1);
-
-      if (existingUser.length > 0) {
-        return res.status(400).json({ message: "Email already registered" });
+      const result = passwordResetRequestSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).send("Invalid email address");
       }
 
-      // Hash password
-      const hashedPassword = await hashPassword(password);
-
-      // Create user
+      const { username } = result.data;
       const [user] = await db
-        .insert(users)
-        .values({
-          email,
-          password: hashedPassword,
-          fullName,
-          role
-        })
-        .returning();
+        .select()
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
 
-      res.status(201).json({
-        message: "User registered successfully",
-        user: {
-          id: user.id,
-          email: user.email,
-          role: user.role,
-          fullName: user.fullName
-        }
+      if (!user) {
+        // Don't reveal if user exists
+        return res.json({ message: "If an account exists with this email, you will receive a password reset link." });
+      }
+
+      const token = generateResetToken();
+      const expires = Date.now() + RESET_TOKEN_EXPIRES;
+
+      // Store token
+      passwordResetTokens.set(token, {
+        username: user.username,
+        expires,
       });
+
+      // In production, send email with reset link
+      console.log(`Password reset token for ${username}: ${token}`);
+
+      res.json({ message: "If an account exists with this email, you will receive a password reset link." });
     } catch (error) {
-      console.error("Registration error:", error);
-      res.status(500).json({ message: "Error registering user" });
+      console.error("Password reset request error:", error);
+      res.status(500).send("Internal server error");
     }
   });
 
-  // Login route
-  app.post("/api/auth/login", (req, res, next) => {
-    const validationResult = loginSchema.safeParse(req.body);
-    if (!validationResult.success) {
-      return res.status(400).json({ 
-        message: validationResult.error.errors[0].message
-      });
-    }
+  app.post("/api/reset-password", async (req, res) => {
+    try {
+      const result = passwordResetSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).send("Invalid input");
+      }
 
-    passport.authenticate("local", (err: any, user: any, info: any) => {
+      const { token, newPassword } = result.data;
+      const resetData = passwordResetTokens.get(token);
+
+      if (!resetData || resetData.expires < Date.now()) {
+        passwordResetTokens.delete(token);
+        return res.status(400).send("Invalid or expired reset token");
+      }
+
+      const hashedPassword = await hashPassword(newPassword);
+
+      // Update password in database
+      await db.update(users)
+        .set({ password: hashedPassword })
+        .where(eq(users.username, resetData.username));
+
+      // Remove used token
+      passwordResetTokens.delete(token);
+
+      res.json({ message: "Password successfully reset" });
+    } catch (error) {
+      console.error("Password reset error:", error);
+      res.status(500).send("Internal server error");
+    }
+  });
+
+  app.post("/api/login", (req, res, next) => {
+    console.log("Login attempt:", req.body.username);
+    console.log("Request body:", { ...req.body, password: '[REDACTED]' });
+
+    passport.authenticate("local", (err: any, user: Express.User | false, info: any) => {
       if (err) {
-        return res.status(500).json({ message: "Internal server error" });
+        console.error("Authentication error:", err);
+        return next(err);
       }
 
       if (!user) {
-        return res.status(401).json({ message: info?.message || "Invalid credentials" });
+        console.log("Authentication failed:", info.message);
+        return res.status(400).send(info.message ?? "Login failed");
       }
 
-      req.logIn(user, async (err) => {
+      req.logIn(user, (err) => {
         if (err) {
-          return res.status(500).json({ message: "Login failed" });
+          console.error("Login error:", err);
+          return next(err);
         }
 
-        // Send user data without sensitive information
-        res.json({
-          user: {
-            id: user.id,
-            email: user.email,
-            role: user.role,
-            fullName: user.fullName
-          }
+        return res.json({
+          id: user.id,
+          username: user.username,
+          role: user.role,
+          roles: user.roles,
         });
       });
     })(req, res, next);
   });
 
-  // Logout route
-  app.post("/api/auth/logout", (req, res) => {
+  app.post("/api/logout", (req, res) => {
     req.logout((err) => {
       if (err) {
-        return res.status(500).json({ message: "Logout failed" });
+        return res.status(500).send("Logout failed");
       }
       res.json({ message: "Logout successful" });
     });
   });
 
-  // Get current user
-  app.get("/api/auth/user", (req, res) => {
-    if (!req.user) {
-      return res.status(401).json({ message: "Not authenticated" });
+  app.get("/api/user", (req, res) => {
+    if (req.isAuthenticated()) {
+      const user = req.user;
+      return res.json({
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        roles: user.roles,
+      });
     }
-
-    const user = req.user as any;
-    res.json({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      fullName: user.fullName
-    });
+    res.status(401).send("Not logged in");
   });
 }
