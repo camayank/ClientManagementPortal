@@ -6,10 +6,9 @@ import { useUser } from "@/hooks/use-user";
 import { Loader2 } from "lucide-react";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth-page";
-import AdminDashboard from "@/pages/admin/dashboard";
-import ClientDashboard from "@/pages/client/dashboard";
 
 // Admin imports
+import AdminDashboard from "@/pages/admin/dashboard";
 import ClientOnboarding from "@/pages/admin/client-onboarding";
 import AdminClients from "@/pages/admin/clients";
 import AdminCredentials from "@/pages/admin/credentials";
@@ -24,6 +23,7 @@ import UserRoles from "@/pages/admin/user-roles";
 import WorkAllocation from "@/pages/admin/work-allocation";
 
 // Client imports
+import ClientDashboard from "@/pages/client/dashboard";
 import ClientDocuments from "@/pages/client/documents";
 import ClientProjects from "@/pages/client/projects";
 import PersonalInfo from "@/pages/client/personal-info";

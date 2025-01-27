@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { SelectUser } from "@db/schema";
+import type { User } from "@db/schema";
 
 type RequestResult = {
   ok: true;
-  user?: SelectUser;
+  user?: User;
 } | {
   ok: false;
   message: string;
@@ -43,7 +43,7 @@ async function handleRequest(
   }
 }
 
-async function fetchUser(): Promise<SelectUser | null> {
+async function fetchUser(): Promise<User | null> {
   const response = await fetch('/api/auth/user', {
     credentials: 'include'
   });
@@ -62,7 +62,7 @@ async function fetchUser(): Promise<SelectUser | null> {
 export function useUser() {
   const queryClient = useQueryClient();
 
-  const { data: user, error, isLoading } = useQuery<SelectUser | null, Error>({
+  const { data: user, error, isLoading } = useQuery<User | null, Error>({
     queryKey: ['/api/auth/user'],
     queryFn: fetchUser,
     staleTime: Infinity,
