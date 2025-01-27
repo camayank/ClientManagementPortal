@@ -23,9 +23,14 @@ export function requirePermission(resource: string, action: string) {
       return res.status(401).send("Unauthorized");
     }
 
-    const hasAccess = await hasPermission(req.user.id, resource, action);
+    const user = req.user as any;
+    if (user.role === 'admin') {
+      return next(); // Admin has all permissions
+    }
+
+    const hasAccess = await hasPermission(user.id, resource, action);
     if (!hasAccess) {
-      console.log(`Permission denied for user ${req.user.id} on ${resource}:${action}`);
+      console.log(`Permission denied for user ${user.id} on ${resource}:${action}`);
       return res.status(403).send("Forbidden");
     }
 

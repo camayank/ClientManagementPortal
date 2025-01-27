@@ -5,6 +5,7 @@ import { apiLimiter, authLimiter, uploadLimiter } from "./middleware/rate-limit"
 import { corsMiddleware } from "./middleware/cors";
 import path from "path";
 import { fileURLToPath } from "url";
+import { setupAuth } from "./auth";
 
 const app = express();
 
@@ -17,9 +18,12 @@ app.use(corsMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Setup authentication before any routes
+setupAuth(app);
+
 // Apply rate limiting middleware
-app.use("/api/login", authLimiter);
-app.use("/api/register", authLimiter);
+app.use("/api/auth/login", authLimiter);
+app.use("/api/auth/register", authLimiter);
 app.use("/api/documents/upload", uploadLimiter);
 app.use("/api", apiLimiter);
 
@@ -100,7 +104,7 @@ app.use((req, res, next) => {
 
   // ALWAYS serve the app on port 5000
   const PORT = process.env.PORT || 5000;
-  server.listen(PORT, () => {
+  server.listen(PORT, "0.0.0.0", () => {
     log(`Server running in ${process.env.NODE_ENV || 'development'} mode`);
     log(`Server listening on port ${PORT}`);
   });

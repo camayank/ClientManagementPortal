@@ -49,7 +49,7 @@ function ProtectedRoute({
     );
   }
 
-  if (!user || (requireAdmin && user.role !== 'admin') || (!requireAdmin && user.role === 'admin')) {
+  if (!user || (requireAdmin && user.role !== 'admin') || (!requireAdmin && user.role !== 'client')) {
     return <Redirect to="/" />;
   }
 
@@ -76,7 +76,10 @@ function Router() {
     <Switch>
       {/* Root path redirects based on role */}
       <Route path="/">
-        <Redirect to={user.role === "admin" ? "/admin/dashboard" : "/client/dashboard"} />
+        {user.role === "admin" ? 
+          <Redirect to="/admin/dashboard" /> : 
+          <Redirect to="/client/dashboard" />
+        }
       </Route>
 
       {/* Client routes */}

@@ -4,21 +4,8 @@ import { setupAuth } from "./auth";
 import { WebSocketService } from "./websocket/server";
 import clientRouter from "./routes/client";
 import { db } from "@db";
-import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles, clientOnboarding, servicePackages, clientServices, clientOnboardingDocuments, clientCommunications, serviceFeatureTiers, serviceFeatures, customPricingRules, tasks, taskCategories, taskDependencies, taskStatusHistory, insertTaskSchema, insertTaskCategorySchema } from "@db/schema";
-import multer from "multer";
-import { eq, and, sql, desc, or } from "drizzle-orm";
-import { requirePermission } from "./middleware/check-permission";
-import crypto from 'crypto';
-import path from 'path';
-import fs from 'fs';
-import { format, subDays, parseISO } from 'date-fns';
-
-const upload = multer({
-  dest: 'uploads/',
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
-  },
-});
+import { users } from "@db/schema";
+import { eq } from "drizzle-orm";
 
 export let wsService: WebSocketService;
 
@@ -34,9 +21,83 @@ export function registerRoutes(app: Express): Server {
     res.json({ status: "ok" });
   });
 
+  // Auth endpoints
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { username, password } = req.body;
+
+      // Find user
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
+
+      if (!user) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      // Update last login
+      await db
+        .update(users)
+        .set({ lastLogin: new Date() })
+        .where(eq(users.id, user.id));
+
+      // Return user info with role
+      res.json({
+        user: {
+          id: user.id,
+          username: user.username,
+          role: user.role,
+          email: user.email,
+          fullName: user.fullName
+        }
+      });
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ message: "Login failed" });
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    if (req.session) {
+      req.session.destroy((err) => {
+        if (err) {
+          return res.status(500).json({ message: "Logout failed" });
+        }
+        res.json({ message: "Logout successful" });
+      });
+    } else {
+      res.json({ message: "Logout successful" });
+    }
+  });
+
+  app.get("/api/auth/user", async (req, res) => {
+    if (!req.user) {
+      return res.status(401).send("Not authenticated");
+    }
+
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, (req.user as any).id))
+      .limit(1);
+
+    if (!user) {
+      return res.status(401).send("User not found");
+    }
+
+    res.json({
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      email: user.email,
+      fullName: user.fullName
+    });
+  });
+
   // Register client routes
   app.use("/api/client", clientRouter);
-
   app.post("/api/documents/upload", requirePermission('documents', 'create'), upload.single('file'), async (req, res) => {
     try {
       const user = req.user as any;
