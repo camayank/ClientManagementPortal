@@ -20,13 +20,6 @@ const loginSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
-const registerSchema = loginSchema.extend({
-  confirmPassword: z.string()
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
-});
-
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, SALT_ROUNDS);
 }
@@ -43,7 +36,6 @@ declare global {
 }
 
 export function setupAuth(app: Express) {
-  // Configure session store with proper security settings
   const MemoryStore = createMemoryStore(session);
   const sessionSettings: session.SessionOptions = {
     secret: process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex'),
@@ -88,8 +80,6 @@ export function setupAuth(app: Express) {
         return done(null, false, { message: "Invalid email or password" });
       }
 
-      console.log("[Auth] Found user:", email, "Role:", user.role);
-
       const isValid = await bcrypt.compare(password, user.password);
       console.log("[Auth] Password validation result:", isValid);
 
@@ -105,7 +95,7 @@ export function setupAuth(app: Express) {
     }
   }));
 
-  passport.serializeUser((user: Express.User, done) => {
+  passport.serializeUser((user: any, done) => {
     console.log("[Auth] Serializing user:", user.id);
     done(null, user.id);
   });
@@ -124,7 +114,6 @@ export function setupAuth(app: Express) {
         return done(null, false);
       }
 
-      console.log("[Auth] Successfully deserialized user:", id);
       done(null, user);
     } catch (err) {
       console.error("[Auth] Deserialization error:", err);
@@ -203,7 +192,7 @@ export function setupAuth(app: Express) {
 
   // Enhanced login route with validation
   app.post("/api/auth/login", (req, res, next) => {
-    console.log("[Auth] Login request received:", req.body.email);
+    console.log("[Auth] Login request received for:", req.body.email);
 
     const validationResult = loginSchema.safeParse(req.body);
     if (!validationResult.success) {
@@ -214,7 +203,7 @@ export function setupAuth(app: Express) {
       return res.status(400).json({ errors });
     }
 
-    passport.authenticate("local", async (err: any, user: Express.User | false, info: any) => {
+    passport.authenticate("local", (err: any, user: Express.User | false, info: any) => {
       if (err) {
         console.error("[Auth] Authentication error:", err);
         return res.status(500).json({ message: "Internal server error" });
