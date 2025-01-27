@@ -2,7 +2,7 @@ import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizz
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
 
-// Enhanced user authentication table
+// Enhanced user authentication table with password reset fields
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   email: text("email").unique().notNull(),
@@ -13,14 +13,13 @@ export const users = pgTable("users", {
   }).default("client").notNull(),
   fullName: text("full_name"),
   isEmailVerified: boolean("is_email_verified").default(false),
-  verificationToken: text("verification_token"),
   resetPasswordToken: text("reset_password_token"),
   resetPasswordExpires: timestamp("reset_password_expires"),
   lastLogin: timestamp("last_login"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Schema validation - Single declaration for user schemas
+// Schema validation
 export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
 export type InsertUser = typeof users.$inferInsert;
@@ -602,7 +601,7 @@ export const serviceTierFeaturesRelations = relations(serviceTierFeatures, ({ on
   }),
 }));
 
-// Schema validation -  Existing code remains
+// Schema validation
 export const insertClientSchema = createInsertSchema(clients);
 export const selectClientSchema = createSelectSchema(clients);
 export const insertProjectSchema = createInsertSchema(projects);
@@ -639,7 +638,7 @@ export const insertPackageChangeHistorySchema = createInsertSchema(packageChange
 export const selectPackageChangeHistorySchema = createSelectSchema(packageChangeHistory);
 
 
-// Types - Existing code remains
+// Types
 export type Client = typeof clients.$inferSelect;
 export type NewClient = typeof clients.$inferInsert;
 export type Project = typeof projects.$inferSelect;
