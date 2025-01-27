@@ -96,43 +96,6 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Auth endpoints
-  app.post("/api/auth/login", async (req, res) => {
-    try {
-      const { username, password } = req.body;
-
-      // Find user
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.username, username))
-        .limit(1);
-
-      if (!user) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-
-      // Update last login
-      await db
-        .update(users)
-        .set({ lastLogin: new Date() })
-        .where(eq(users.id, user.id));
-
-      // Return user info with role
-      res.json({
-        user: {
-          id: user.id,
-          username: user.username,
-          role: user.role,
-          email: user.email,
-          fullName: user.fullName
-        }
-      });
-    } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({ message: "Login failed" });
-    }
-  });
-
   app.post("/api/auth/logout", (req, res) => {
     if (req.session) {
       req.session.destroy((err) => {
@@ -169,6 +132,7 @@ export function registerRoutes(app: Express): Server {
       fullName: user.fullName
     });
   });
+
 
   // Configure multer for file uploads
   const upload = multer({ dest: 'uploads/' });
@@ -1608,6 +1572,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Initialize WebSocket service
   const httpServer = createServer(app);
   wsService = new WebSocketService(httpServer);
 
