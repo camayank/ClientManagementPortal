@@ -8,7 +8,8 @@ import { db } from "@db";
 import { eq, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
-import { type User } from "@db/schema";
+import nodemailer from "nodemailer";
+import type { User } from "@db/schema";
 
 const SALT_ROUNDS = 10;
 
@@ -20,6 +21,7 @@ function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
+// Extend Express User type
 declare global {
   namespace Express {
     interface User extends User {}
@@ -27,6 +29,7 @@ declare global {
 }
 
 export function setupAuth(app: Express) {
+  // Configure session store with proper security settings
   const MemoryStore = createMemoryStore(session);
   const sessionSettings: session.SessionOptions = {
     secret: process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex'),
@@ -52,31 +55,32 @@ export function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  // Configure local strategy with proper error handling
   passport.use(new LocalStrategy({
-    usernameField: 'username',
+    usernameField: 'email',
     passwordField: 'password'
-  }, async (username, password, done) => {
+  }, async (email, password, done) => {
     try {
-      console.log("[Auth] Login attempt for:", username);
+      console.log("[Auth] Login attempt for:", email);
 
       const [user] = await db
         .select()
         .from(users)
-        .where(ilike(users.email, username))
+        .where(ilike(users.email, email))
         .limit(1);
 
       if (!user) {
-        console.log("[Auth] User not found:", username);
+        console.log("[Auth] User not found:", email);
         return done(null, false, { message: "Invalid email or password" });
       }
 
-      console.log("[Auth] Found user:", username, "Role:", user.role);
+      console.log("[Auth] Found user:", email, "Role:", user.role);
 
       const isValid = await bcrypt.compare(password, user.password);
       console.log("[Auth] Password validation result:", isValid);
 
       if (!isValid) {
-        console.log("[Auth] Invalid password for user:", username);
+        console.log("[Auth] Invalid password for user:", email);
         return done(null, false, { message: "Invalid email or password" });
       }
 
@@ -116,9 +120,9 @@ export function setupAuth(app: Express) {
 
   // Enhanced login route with better error handling
   app.post("/api/auth/login", (req, res, next) => {
-    console.log("[Auth] Login request received:", req.body.username);
+    console.log("[Auth] Login request received:", req.body.email);
 
-    if (!req.body.username || !req.body.password) {
+    if (!req.body.email || !req.body.password) {
       return res.status(400).json({ message: "Email and password are required" });
     }
 
@@ -149,9 +153,8 @@ export function setupAuth(app: Express) {
           res.json({
             user: {
               id: user.id,
-              username: user.username,
-              role: user.role,
               email: user.email,
+              role: user.role,
               fullName: user.fullName
             }
           });
