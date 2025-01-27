@@ -6,17 +6,27 @@ import { useUser } from "@/hooks/use-user";
 import { Loader2 } from "lucide-react";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth-page";
+import AdminDashboard from "@/pages/admin/dashboard";
+import ClientDashboard from "@/pages/client/dashboard";
 
 function ProtectedRoute({ 
   component: Component, 
-  isAdmin: requireAdmin 
+  requireAdmin 
 }: { 
   component: React.ComponentType, 
-  isAdmin: boolean 
+  requireAdmin?: boolean 
 }) {
-  const { user, isAdmin } = useUser();
+  const { user, isLoading } = useUser();
 
-  if (!user || (requireAdmin && !isAdmin) || (!requireAdmin && isAdmin)) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-border" />
+      </div>
+    );
+  }
+
+  if (!user || (requireAdmin && user.role !== 'admin') || (!requireAdmin && user.role === 'admin')) {
     return <Redirect to="/" />;
   }
 
@@ -41,9 +51,19 @@ function Router() {
 
   return (
     <Switch>
-      {/* Add root redirect */}
+      {/* Root path redirects based on role */}
       <Route path="/">
-        <Redirect to={user.role === "admin" ? "/admin" : "/client"} />
+        <Redirect to={user.role === "admin" ? "/admin/dashboard" : "/client/dashboard"} />
+      </Route>
+
+      {/* Client routes */}
+      <Route path="/client/dashboard">
+        <ProtectedRoute component={ClientDashboard} requireAdmin={false} />
+      </Route>
+
+      {/* Admin routes */}
+      <Route path="/admin/dashboard">
+        <ProtectedRoute component={AdminDashboard} requireAdmin={true} />
       </Route>
 
       {/* Add NotFound route */}
