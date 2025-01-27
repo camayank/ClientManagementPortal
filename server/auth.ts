@@ -354,7 +354,8 @@ export function setupAuth(app: Express) {
     passport.use(new GoogleStrategy({
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: "/auth/google/callback"
+      callbackURL: "/api/auth/google/callback",  // Changed to match our API prefix
+      scope: ['profile', 'email']
     }, async (accessToken, refreshToken, profile, done) => {
       try {
         let [user] = await db
@@ -420,15 +421,18 @@ export function setupAuth(app: Express) {
   }
 
   // Social login routes
-  app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+  app.get('/api/auth/google', 
+    passport.authenticate('google', { 
+      scope: ['profile', 'email']
+    })
+  );
   app.get('/auth/linkedin', passport.authenticate('linkedin'));
 
-  app.get('/auth/google/callback',
-    passport.authenticate('google', { failureRedirect: '/login' }),
-    (req, res) => {
-      const tokens = generateTokens(req.user);
-      res.redirect(`/auth/success?tokens=${encodeURIComponent(JSON.stringify(tokens))}`);
-    }
+  app.get('/api/auth/google/callback',
+    passport.authenticate('google', { 
+      failureRedirect: '/login',
+      successRedirect: '/'
+    })
   );
 
   app.get('/auth/linkedin/callback',
