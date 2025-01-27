@@ -21,19 +21,17 @@ if (!JWT_SECRET) {
   throw new Error("JWT_SECRET environment variable is required for authentication");
 }
 
-// JWT Configuration
 const JWT_CONFIG = {
   access: {
     secret: JWT_SECRET,
-    expiresIn: '15m',  // Access tokens expire in 15 minutes
+    expiresIn: '15m',
   },
   refresh: {
     secret: JWT_SECRET,
-    expiresIn: '7d',   // Refresh tokens expire in 7 days
+    expiresIn: '7d',
   }
 };
 
-// Type declarations for Express user
 declare global {
   namespace Express {
     interface User extends SelectUser {
@@ -81,21 +79,122 @@ function generateTokens(user: Express.User) {
 export function setupAuth(app: Express) {
   const MemoryStore = createMemoryStore(session);
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET || "your-session-secret",
+    secret: JWT_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
       secure: app.get("env") === "production",
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      maxAge: 24 * 60 * 60 * 1000,
     },
     store: new MemoryStore({
-      checkPeriod: 86400000, // 24 hours
+      checkPeriod: 86400000,
     }),
   };
 
   app.use(session(sessionSettings));
   app.use(passport.initialize());
   app.use(passport.session());
+
+  passport.use(new LocalStrategy(async (username, password, done) => {
+    try {
+      console.log(`Attempting login for user: ${username}`);
+
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
+
+      if (!user) {
+        console.log(`User not found: ${username}`);
+        return done(null, false, { message: "Invalid credentials" });
+      }
+
+      const isValidPassword = await comparePassword(password, user.password);
+      if (!isValidPassword) {
+        console.log(`Invalid password for user: ${username}`);
+        return done(null, false, { message: "Invalid credentials" });
+      }
+
+      console.log(`Successful login for user: ${username} with role: ${user.role}`);
+      return done(null, user);
+    } catch (err) {
+      console.error('Login error:', err);
+      return done(err);
+    }
+  }));
+
+  passport.serializeUser((user, done) => {
+    console.log(`Serializing user: ${user.id}`);
+    done(null, user.id);
+  });
+
+  passport.deserializeUser(async (id: number, done) => {
+    try {
+      console.log(`Deserializing user: ${id}`);
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, id))
+        .limit(1);
+
+      if (!user) {
+        console.log(`User not found during deserialization: ${id}`);
+        return done(null, false);
+      }
+
+      console.log(`Successfully deserialized user: ${id} with role: ${user.role}`);
+      done(null, user);
+    } catch (err) {
+      console.error('Deserialization error:', err);
+      done(err);
+    }
+  });
+
+  app.post("/api/auth/login", (req, res, next) => {
+    passport.authenticate("local", async (err: any, user: Express.User | false, info: any) => {
+      if (err) {
+        console.error('Authentication error:', err);
+        return next(err);
+      }
+
+      if (!user) {
+        console.log('Login failed:', info?.message);
+        return res.status(401).json({ message: info?.message || "Invalid credentials" });
+      }
+
+      req.logIn(user, async (err) => {
+        if (err) {
+          console.error('Login error:', err);
+          return next(err);
+        }
+
+        try {
+          // Update last login
+          await db.update(users)
+            .set({ lastLogin: new Date() })
+            .where(eq(users.id, user.id));
+
+          const tokens = generateTokens(user);
+
+          // Send user info with role
+          res.json({
+            user: {
+              id: user.id,
+              username: user.username,
+              role: user.role,
+              email: user.email,
+              fullName: user.fullName
+            },
+            ...tokens
+          });
+        } catch (error) {
+          console.error('Post-login error:', error);
+          return next(error);
+        }
+      });
+    })(req, res, next);
+  });
 
   // JWT Strategy
   passport.use(new JwtStrategy({
@@ -119,89 +218,6 @@ export function setupAuth(app: Express) {
     }
   }));
 
-  // Local Strategy
-  passport.use(new LocalStrategy(async (username, password, done) => {
-    try {
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.username, username))
-        .limit(1);
-
-      if (!user) {
-        return done(null, false, { message: "Incorrect username." });
-      }
-
-      const isValidPassword = await comparePassword(password, user.password);
-      if (!isValidPassword) {
-        return done(null, false, { message: "Incorrect password." });
-      }
-
-      return done(null, user);
-    } catch (err) {
-      return done(err);
-    }
-  }));
-
-  passport.serializeUser((user, done) => {
-    done(null, user.id);
-  });
-
-  passport.deserializeUser(async (id: number, done) => {
-    try {
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, id))
-        .limit(1);
-
-      if (!user) {
-        return done(null, false);
-      }
-
-      done(null, user);
-    } catch (err) {
-      done(err);
-    }
-  });
-
-  // Auth Routes
-  app.post("/api/auth/login", (req, res, next) => {
-    passport.authenticate("local", (err: any, user: Express.User | false, info: any) => {
-      if (err) {
-        return next(err);
-      }
-
-      if (!user) {
-        return res.status(400).json({ message: info.message || "Login failed" });
-      }
-
-      req.logIn(user, (err) => {
-        if (err) {
-          return next(err);
-        }
-
-        // Update last login and generate tokens
-        db.update(users)
-          .set({ lastLogin: new Date() })
-          .where(eq(users.id, user.id))
-          .execute();
-
-        const tokens = generateTokens(user);
-
-        return res.json({
-          user: {
-            id: user.id,
-            username: user.username,
-            role: user.role,
-            email: user.email,
-            fullName: user.fullName
-          },
-          ...tokens
-        });
-      });
-    })(req, res, next);
-  });
 
   app.post("/api/auth/refresh", (req, res) => {
     const { refreshToken } = req.body;

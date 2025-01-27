@@ -14,7 +14,6 @@ type RequestResult = {
 type LoginData = {
   username: string;
   password: string;
-  role?: string;
 };
 
 async function handleRequest(
