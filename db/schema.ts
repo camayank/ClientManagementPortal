@@ -9,34 +9,22 @@ export const users = pgTable("users", {
   username: text("username").unique().notNull(),
   password: text("password").notNull(),
   role: text("role", {
-    enum: [
-      "admin",
-      "client",
-      "manager",
-      "partner",
-      "team_lead",
-      "staff_accountant",
-      "quality_reviewer",
-      "compliance_officer"
-    ]
+    enum: ["admin", "client", "team_member", "partner"]
   }).default("client").notNull(),
   fullName: text("full_name"),
   isEmailVerified: boolean("is_email_verified").default(false),
   verificationToken: text("verification_token"),
   resetPasswordToken: text("reset_password_token"),
   resetPasswordExpires: timestamp("reset_password_expires"),
-  mfaEnabled: boolean("mfa_enabled").default(false),
-  mfaSecret: text("mfa_secret"),
   lastLogin: timestamp("last_login"),
-  lastFailedLogin: timestamp("last_failed_login"),
-  failedLoginAttempts: integer("failed_login_attempts").default(0),
-  status: text("status", { enum: ["active", "suspended", "locked"] }).default("active"),
-  refreshToken: text("refresh_token"),
-  refreshTokenExpires: timestamp("refresh_token_expires"),
-  socialLogins: jsonb("social_logins"), // Store Google, LinkedIn OAuth info
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// Schema validation - Single declaration for user schemas
+export const insertUserSchema = createInsertSchema(users);
+export const selectUserSchema = createSelectSchema(users);
+export type InsertUser = typeof users.$inferInsert;
+export type SelectUser = typeof users.$inferSelect;
 
 // OAuth providers table
 export const oauthProviders = pgTable("oauth_providers", {
@@ -144,8 +132,6 @@ export const otpCodesRelations = relations(otpCodes, ({ one }) => ({
 }));
 
 // Schema validation
-export const insertUserSchema = createInsertSchema(users);
-export const selectUserSchema = createSelectSchema(users);
 export const insertOAuthProviderSchema = createInsertSchema(oauthProviders);
 export const selectOAuthProviderSchema = createSelectSchema(oauthProviders);
 export const insertSessionSchema = createInsertSchema(sessions);
@@ -458,7 +444,6 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
     references: [projectTemplates.id],
   }),
 }));
-
 
 export const documentsRelations = relations(documents, ({ one }) => ({
   client: one(clients, {
