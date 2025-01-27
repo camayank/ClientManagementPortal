@@ -1,6 +1,7 @@
 import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 // Enhanced user authentication table with password reset fields
 export const users = pgTable("users", {
@@ -17,6 +18,7 @@ export const users = pgTable("users", {
   resetPasswordExpires: timestamp("reset_password_expires"),
   lastLogin: timestamp("last_login"),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Schema validation
@@ -24,6 +26,14 @@ export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
 export type InsertUser = typeof users.$inferInsert;
 export type SelectUser = typeof users.$inferSelect;
+
+// Relations
+export const usersRelations = relations(users, ({ many }) => ({
+  roles: many(userRoles),
+  oauthAccounts: many(oauthProviders),
+  sessions: many(sessions),
+  otpCodes: many(otpCodes),
+}));
 
 // OAuth providers table
 export const oauthProviders = pgTable("oauth_providers", {
@@ -102,12 +112,7 @@ export const permissionsRelations = relations(permissions, ({ many }) => ({
   roles: many(rolePermissions),
 }));
 
-export const usersRelations = relations(users, ({ many }) => ({
-  roles: many(userRoles),
-  oauthAccounts: many(oauthProviders),
-  sessions: many(sessions),
-  otpCodes: many(otpCodes),
-}));
+
 
 export const oauthProvidersRelations = relations(oauthProviders, ({ one }) => ({
   user: one(users, {
@@ -752,3 +757,11 @@ export const insertTaskDependencySchema = createInsertSchema(taskDependencies);
 export const selectTaskDependencySchema = createSelectSchema(taskDependencies);
 export const insertTaskStatusHistorySchema = createInsertSchema(taskStatusHistory);
 export const selectTaskStatusHistorySchema = createSelectSchema(taskStatusHistory);
+
+// Create indexes for better performance
+sql`
+  CREATE EXTENSION IF NOT EXISTS citext;
+  ALTER TABLE users ALTER COLUMN email TYPE citext;
+  CREATE INDEX IF NOT EXISTS users_reset_token_idx ON users (reset_password_token);
+  CREATE INDEX IF NOT EXISTS users_email_idx ON users (email);
+`.execute();

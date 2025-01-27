@@ -1,18 +1,36 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
-import { WebSocketService } from "./websocket/server";
-import clientRouter from "./routes/client";
+import passport from "passport";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
+import { Strategy as LinkedInStrategy } from "passport-linkedin-oauth2";
 import { db } from "@db";
-import { users } from "@db/schema";
-import { eq } from "drizzle-orm";
-import { requirePermission } from "./middleware/check-permission";
+import { 
+  users, 
+  clients,
+  documents,
+  projects,
+  milestones,
+  milestoneUpdates,
+  roles,
+  serviceFeatureTiers,
+  serviceFeatures,
+  serviceTierFeatures,
+  clientOnboarding,
+  customPricingRules,
+  taskCategories,
+  tasks,
+  taskStatusHistory,
+  taskDependencies
+} from "@db/schema";
+import { eq, ilike, and, sql, desc, or } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-
-// Configure multer for file uploads
-const upload = multer({ dest: 'uploads/' });
+import { hashPassword } from "./auth";
+import { WebSocketService } from "./websocket/server";
+import { requirePermission } from "./middleware/check-permission";
+import { parseISO, subDays, format } from 'date-fns';
 
 export let wsService: WebSocketService;
 
@@ -20,8 +38,57 @@ export function registerRoutes(app: Express): Server {
   // Initialize authentication first
   setupAuth(app);
 
-  const httpServer = createServer(app);
-  wsService = new WebSocketService(httpServer);
+  // Configure Google OAuth Strategy
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    passport.use(new GoogleStrategy({
+      clientID: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      callbackURL: "/api/auth/google/callback",
+    }, async (accessToken, refreshToken, profile, done) => {
+      try {
+        console.log("[OAuth] Google login attempt:", profile.emails?.[0]?.value);
+
+        let [user] = await db
+          .select()
+          .from(users)
+          .where(ilike(users.email, profile.emails?.[0]?.value || ''))
+          .limit(1);
+
+        if (!user) {
+          // Create new user
+          const [newUser] = await db.insert(users)
+            .values({
+              email: profile.emails?.[0]?.value || '',
+              username: profile.emails?.[0]?.value || '',
+              password: await hashPassword(Math.random().toString(36)),
+              fullName: profile.displayName,
+              role: 'client',
+              isEmailVerified: true,
+            })
+            .returning();
+          user = newUser;
+        }
+
+        return done(null, user);
+      } catch (error) {
+        console.error("[OAuth] Google authentication error:", error);
+        return done(error as Error);
+      }
+    }));
+  }
+
+  // OAuth Routes
+  app.get("/api/auth/google", passport.authenticate("google", { scope: ["profile", "email"] }));
+  app.get("/api/auth/google/callback", passport.authenticate("google", {
+    successRedirect: "/client",
+    failureRedirect: "/",
+  }));
+
+  app.get("/api/auth/linkedin", passport.authenticate("linkedin"));
+  app.get("/api/auth/linkedin/callback", passport.authenticate("linkedin", {
+    successRedirect: "/client",
+    failureRedirect: "/",
+  }));
 
   // Test endpoint to verify API is working
   app.get("/api/health", (_req, res) => {
@@ -103,8 +170,8 @@ export function registerRoutes(app: Express): Server {
     });
   });
 
-  // Register client routes
-  app.use("/api/client", clientRouter);
+  // Configure multer for file uploads
+  const upload = multer({ dest: 'uploads/' });
   app.post("/api/documents/upload", requirePermission('documents', 'create'), upload.single('file'), async (req, res) => {
     try {
       const user = req.user as any;
@@ -737,6 +804,7 @@ export function registerRoutes(app: Express): Server {
   });
 
 
+
   app.get("/api/admin/reports", requirePermission('reports', 'read'), async (req, res) => {
     const { type, startDate, endDate } = req.query;
     if (!startDate || !endDate) {
@@ -921,7 +989,7 @@ export function registerRoutes(app: Express): Server {
     } catch (error) {
       console.error("Error generating report download:", error);
       res.status(500).send("Failed to generate report download");
-        }
+    }
   });
 
   app.get("/api/admin/service-feature-tiers", requirePermission('packages', 'read'), async (req, res) => {
@@ -977,7 +1045,8 @@ export function registerRoutes(app: Express): Server {
       }
 
       const [updatedTier] = await db.update(serviceFeatureTiers)
-        .set({          name,
+        .set({
+          name,
           description,
           level,
           updatedAt: new Date()
@@ -1047,7 +1116,8 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.get("/api/admin/service-features", requirePermission('packages', 'read'), async (req, res) => {    try {
+  app.get("/api/admin/service-features", requirePermission('packages', 'read'), async (req, res) => {
+    try {
       const features = await db.select().from(serviceFeatures);
       res.json(features);
     } catch (error) {
@@ -1537,6 +1607,9 @@ export function registerRoutes(app: Express): Server {
       });
     }
   });
+
+  const httpServer = createServer(app);
+  wsService = new WebSocketService(httpServer);
 
   return httpServer;
 }

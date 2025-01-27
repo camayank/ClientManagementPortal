@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { useUser } from "@/hooks/use-user";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
@@ -16,13 +15,13 @@ import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
 
 // Form validation schemas
 const loginSchema = z.object({
-  username: z.string().email("Please enter a valid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  username: z.string().email("Please enter a valid email address").toLowerCase(),
+  password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
 const registerSchema = z.object({
-  username: z.string().email("Please enter a valid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  username: z.string().email("Please enter a valid email address").toLowerCase(),
+  password: z.string().min(8, "Password must be at least 8 characters"),
   confirmPassword: z.string(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
@@ -36,7 +35,7 @@ export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const { login, register } = useUser();
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
 
@@ -58,14 +57,15 @@ export default function AuthPage() {
   });
 
   async function handleLogin(data: LoginForm) {
+    setIsLoading(true);
     try {
+      console.log("[Auth] Login attempt:", data.username);
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: data.username,
+          username: data.username.toLowerCase(),
           password: data.password,
-          role: showAdminLogin ? "admin" : "client",
         }),
         credentials: 'include'
       });
@@ -73,28 +73,34 @@ export default function AuthPage() {
       const result = await response.json();
 
       if (response.ok) {
+        console.log("[Auth] Login successful:", data.username);
         toast({
           title: "Success",
           description: "Login successful",
         });
         setLocation(showAdminLogin ? "/admin" : "/client");
       } else {
+        console.log("[Auth] Login failed:", result.message);
         toast({
           variant: "destructive",
           title: "Error",
-          description: result.message || "Login failed",
+          description: result.message || "Invalid credentials",
         });
       }
     } catch (error: any) {
+      console.error("[Auth] Login error:", error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.message,
+        description: "An error occurred during login. Please try again.",
       });
+    } finally {
+      setIsLoading(false);
     }
   }
 
   async function handleRegister(data: RegisterForm) {
+    setIsLoading(true);
     try {
       if (showAdminLogin) {
         toast({
@@ -105,11 +111,12 @@ export default function AuthPage() {
         return;
       }
 
+      console.log("[Auth] Registration attempt:", data.username);
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: data.username,
+          username: data.username.toLowerCase(),
           password: data.password,
           role: "client",
         }),
@@ -119,12 +126,14 @@ export default function AuthPage() {
       const result = await response.json();
 
       if (response.ok) {
+        console.log("[Auth] Registration successful:", data.username);
         toast({
           title: "Success",
           description: "Registration successful. Please log in.",
         });
         setIsLogin(true);
       } else {
+        console.log("[Auth] Registration failed:", result.message);
         toast({
           variant: "destructive",
           title: "Error",
@@ -132,10 +141,42 @@ export default function AuthPage() {
         });
       }
     } catch (error: any) {
+      console.error("[Auth] Registration error:", error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.message,
+        description: "An error occurred during registration. Please try again.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleSocialLogin(provider: 'google' | 'linkedin') {
+    try {
+      console.log(`[Auth] Initiating ${provider} login`);
+      const response = await fetch(`/api/auth/${provider}`, {
+        method: 'GET',
+        credentials: 'include'
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.authUrl) {
+        window.location.href = result.authUrl;
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: `${provider} login is currently unavailable`
+        });
+      }
+    } catch (error: any) {
+      console.error(`[Auth] ${provider} login error:`, error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: `Failed to initiate ${provider} login`
       });
     }
   }
@@ -188,6 +229,7 @@ export default function AuthPage() {
                             type="email" 
                             placeholder="Enter your email" 
                             className="pl-10"
+                            disabled={isLoading}
                             {...field} 
                           />
                         </div>
@@ -209,6 +251,7 @@ export default function AuthPage() {
                             type="password" 
                             placeholder="Enter your password" 
                             className="pl-10"
+                            disabled={isLoading}
                             {...field} 
                           />
                         </div>
@@ -222,11 +265,12 @@ export default function AuthPage() {
                   variant="link"
                   className="px-0"
                   onClick={() => setShowForgotPassword(true)}
+                  disabled={isLoading}
                 >
                   Forgot password?
                 </Button>
-                <Button type="submit" className="w-full">
-                  Login
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? "Logging in..." : "Login"}
                 </Button>
               </form>
             </Form>
@@ -246,6 +290,7 @@ export default function AuthPage() {
                             type="email" 
                             placeholder="Enter your email" 
                             className="pl-10"
+                            disabled={isLoading}
                             {...field} 
                           />
                         </div>
@@ -267,6 +312,7 @@ export default function AuthPage() {
                             type="password" 
                             placeholder="Enter your password" 
                             className="pl-10"
+                            disabled={isLoading}
                             {...field} 
                           />
                         </div>
@@ -288,6 +334,7 @@ export default function AuthPage() {
                             type="password" 
                             placeholder="Confirm your password" 
                             className="pl-10"
+                            disabled={isLoading}
                             {...field} 
                           />
                         </div>
@@ -296,8 +343,8 @@ export default function AuthPage() {
                     </FormItem>
                   )}
                 />
-                <Button type="submit" className="w-full">
-                  Create Account
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? "Creating Account..." : "Create Account"}
                 </Button>
               </form>
             </Form>
@@ -311,6 +358,7 @@ export default function AuthPage() {
                   variant="outline"
                   className="w-full mb-2"
                   onClick={() => handleSocialLogin('google')}
+                  disabled={isLoading}
                 >
                   <SiGoogle className="mr-2 h-4 w-4" />
                   Continue with Google
@@ -320,6 +368,7 @@ export default function AuthPage() {
                   variant="outline"
                   className="w-full"
                   onClick={() => handleSocialLogin('linkedin')}
+                  disabled={isLoading}
                 >
                   <SiLinkedin className="mr-2 h-4 w-4" />
                   Continue with LinkedIn
@@ -331,6 +380,7 @@ export default function AuthPage() {
                 variant="ghost"
                 className="w-full mt-4"
                 onClick={() => setIsLogin(!isLogin)}
+                disabled={isLoading}
               >
                 {isLogin ? "Need an account? Sign up" : "Already have an account? Login"}
               </Button>
