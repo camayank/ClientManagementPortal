@@ -37,19 +37,10 @@ export const users = pgTable("users", {
   username: text("username").unique().notNull(),
   password: text("password").notNull(),
   role: text("role", {
-    enum: [
-      "admin",
-      "client",
-      "manager",
-      "partner",
-      "team_lead",
-      "staff_accountant",
-      "quality_reviewer",
-      "compliance_officer"
-    ]
+    enum: ["admin", "client"]
   }).default("client").notNull(),
-  fullName: text("full_name"),
-  email: text("email"),
+  resetToken: text("reset_token"),
+  resetTokenExpiry: timestamp("reset_token_expiry"),
   lastLogin: timestamp("last_login"),
   createdAt: timestamp("created_at").defaultNow(),
 });
