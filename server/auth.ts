@@ -10,8 +10,22 @@ import bcrypt from "bcrypt";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
 import type { User } from "@db/schema";
+import { z } from "zod";
 
 const SALT_ROUNDS = 10;
+
+// Validation schemas
+const loginSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
+
+const registerSchema = loginSchema.extend({
+  confirmPassword: z.string()
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
+});
 
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, SALT_ROUNDS);
@@ -118,12 +132,86 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // Enhanced login route with better error handling
+  // Registration endpoint with validation
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      console.log("[Auth] Registration attempt for:", req.body.email);
+
+      // Validate input
+      const validationResult = registerSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        const errors = validationResult.error.errors.map(err => ({
+          field: err.path[0],
+          message: err.message
+        }));
+        return res.status(400).json({ errors });
+      }
+
+      const { email, password } = validationResult.data;
+
+      // Check if user exists
+      const [existingUser] = await db
+        .select()
+        .from(users)
+        .where(ilike(users.email, email))
+        .limit(1);
+
+      if (existingUser) {
+        return res.status(400).json({
+          errors: [{
+            field: "email",
+            message: "Email already registered"
+          }]
+        });
+      }
+
+      // Hash password and create user
+      const hashedPassword = await hashPassword(password);
+      const [user] = await db.insert(users)
+        .values({
+          email,
+          username: email,
+          password: hashedPassword,
+          role: 'client',
+          isEmailVerified: false,
+          verificationToken: generateToken(),
+        })
+        .returning();
+
+      console.log("[Auth] User registered successfully:", user.id);
+
+      // Login user after registration
+      req.login(user, (err) => {
+        if (err) {
+          console.error("[Auth] Auto-login error after registration:", err);
+          return res.status(500).json({ message: "Registration successful but login failed" });
+        }
+        res.json({
+          message: "Registration successful",
+          user: {
+            id: user.id,
+            email: user.email,
+            role: user.role
+          }
+        });
+      });
+    } catch (error) {
+      console.error("[Auth] Registration error:", error);
+      res.status(500).json({ message: "Registration failed" });
+    }
+  });
+
+  // Enhanced login route with validation
   app.post("/api/auth/login", (req, res, next) => {
     console.log("[Auth] Login request received:", req.body.email);
 
-    if (!req.body.email || !req.body.password) {
-      return res.status(400).json({ message: "Email and password are required" });
+    const validationResult = loginSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      const errors = validationResult.error.errors.map(err => ({
+        field: err.path[0],
+        message: err.message
+      }));
+      return res.status(400).json({ errors });
     }
 
     passport.authenticate("local", async (err: any, user: Express.User | false, info: any) => {
@@ -164,25 +252,6 @@ export function setupAuth(app: Express) {
         }
       });
     })(req, res, next);
-  });
-
-  // Enhanced logout route with session cleanup
-  app.post("/api/auth/logout", (req, res) => {
-    console.log("[Auth] Logout request received");
-
-    if (req.session) {
-      req.session.destroy((err) => {
-        if (err) {
-          console.error("[Auth] Logout error:", err);
-          return res.status(500).json({ message: "Logout failed" });
-        }
-        res.clearCookie('connect.sid');
-        console.log("[Auth] Logout successful");
-        res.json({ message: "Logout successful" });
-      });
-    } else {
-      res.json({ message: "Already logged out" });
-    }
   });
 
   // Secure forgot password implementation
@@ -243,16 +312,24 @@ export function setupAuth(app: Express) {
   // Secure password reset implementation
   app.post("/api/auth/reset-password", async (req, res) => {
     try {
-      const { token, password } = req.body;
+      const validationResult = loginSchema.extend({
+        token: z.string(),
+        confirmPassword: z.string()
+      }).refine((data) => data.password === data.confirmPassword, {
+        message: "Passwords don't match",
+        path: ["confirmPassword"],
+      }).safeParse(req.body);
+
+      if (!validationResult.success) {
+        const errors = validationResult.error.errors.map(err => ({
+          field: err.path[0],
+          message: err.message
+        }));
+        return res.status(400).json({ errors });
+      }
+
+      const { token, password } = validationResult.data;
       console.log("[Auth] Password reset attempt with token");
-
-      if (!token || !password) {
-        return res.status(400).json({ message: "Token and password are required" });
-      }
-
-      if (password.length < 8) {
-        return res.status(400).json({ message: "Password must be at least 8 characters long" });
-      }
 
       const [user] = await db
         .select()
@@ -280,6 +357,25 @@ export function setupAuth(app: Express) {
     } catch (error) {
       console.error("[Auth] Reset password error:", error);
       res.status(500).json({ message: "Failed to reset password" });
+    }
+  });
+
+  // Enhanced logout route with session cleanup
+  app.post("/api/auth/logout", (req, res) => {
+    console.log("[Auth] Logout request received");
+
+    if (req.session) {
+      req.session.destroy((err) => {
+        if (err) {
+          console.error("[Auth] Logout error:", err);
+          return res.status(500).json({ message: "Logout failed" });
+        }
+        res.clearCookie('connect.sid');
+        console.log("[Auth] Logout successful");
+        res.json({ message: "Logout successful" });
+      });
+    } else {
+      res.json({ message: "Already logged out" });
     }
   });
 }
