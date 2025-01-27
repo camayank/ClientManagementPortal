@@ -4,15 +4,13 @@ import type { SelectUser } from "@db/schema";
 type RequestResult = {
   ok: true;
   user?: SelectUser;
-  accessToken?: string;
-  refreshToken?: string;
 } | {
   ok: false;
   message: string;
 };
 
 type LoginData = {
-  username: string;
+  email: string;
   password: string;
 };
 
@@ -31,7 +29,7 @@ async function handleRequest(
 
     if (!response.ok) {
       if (response.status >= 500) {
-        return { ok: false, message: response.statusText };
+        return { ok: false, message: "Internal server error" };
       }
 
       const message = await response.text();
@@ -87,13 +85,6 @@ export function useUser() {
     },
   });
 
-  const registerMutation = useMutation<RequestResult, Error, LoginData>({
-    mutationFn: (userData) => handleRequest('/api/auth/register', 'POST', userData),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
-    },
-  });
-
   return {
     user,
     isLoading,
@@ -101,6 +92,5 @@ export function useUser() {
     isAdmin: user?.role === 'admin',
     login: loginMutation.mutateAsync,
     logout: logoutMutation.mutateAsync,
-    register: registerMutation.mutateAsync,
   };
 }

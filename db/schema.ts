@@ -1,6 +1,7 @@
 import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
+import * as z from 'zod';
 
 // Base tables first
 export const users = pgTable("users", {
@@ -131,15 +132,6 @@ export const otpCodesRelations = relations(otpCodes, ({ one }) => ({
     references: [users.id],
   }),
 }));
-
-// Schema validation
-export const insertOAuthProviderSchema = createInsertSchema(oauthProviders);
-export const selectOAuthProviderSchema = createSelectSchema(oauthProviders);
-export const insertSessionSchema = createInsertSchema(sessions);
-export const selectSessionSchema = createSelectSchema(sessions);
-export const insertOtpCodeSchema = createInsertSchema(otpCodes);
-export const selectOtpCodeSchema = createSelectSchema(otpCodes);
-
 
 export const clients = pgTable("clients", {
   id: serial("id").primaryKey(),
@@ -599,6 +591,13 @@ export const serviceTierFeaturesRelations = relations(serviceTierFeatures, ({ on
 }));
 
 // Schema validation
+export const insertOAuthProviderSchema = createInsertSchema(oauthProviders);
+export const selectOAuthProviderSchema = createSelectSchema(oauthProviders);
+export const insertSessionSchema = createInsertSchema(sessions);
+export const selectSessionSchema = createSelectSchema(sessions);
+export const insertOtpCodeSchema = createInsertSchema(otpCodes);
+export const selectOtpCodeSchema = createSelectSchema(otpCodes);
+
 export const insertClientSchema = createInsertSchema(clients);
 export const selectClientSchema = createSelectSchema(clients);
 export const insertProjectSchema = createInsertSchema(projects);
@@ -782,3 +781,14 @@ export const schema = {
   taskDependencies,
   taskStatusHistory,
 };
+
+// Schema validation
+export const loginSchema = z.object({
+  email: z.string().email("Invalid email format"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
+
+export const registerSchema = loginSchema.extend({
+  fullName: z.string().optional(),
+  role: z.enum(["admin", "client", "team_member", "partner"]).default("client"),
+});
