@@ -53,29 +53,6 @@ async function comparePassword(password: string, hash: string): Promise<boolean>
   }
 }
 
-function generateTokens(user: Express.User) {
-  const accessToken = jwt.sign(
-    { 
-      id: user.id, 
-      role: user.role,
-      type: 'access' 
-    }, 
-    JWT_CONFIG.access.secret, 
-    { expiresIn: JWT_CONFIG.access.expiresIn }
-  );
-
-  const refreshToken = jwt.sign(
-    { 
-      id: user.id,
-      type: 'refresh'
-    }, 
-    JWT_CONFIG.refresh.secret, 
-    { expiresIn: JWT_CONFIG.refresh.expiresIn }
-  );
-
-  return { accessToken, refreshToken };
-}
-
 export function setupAuth(app: Express) {
   const MemoryStore = createMemoryStore(session);
   const sessionSettings: session.SessionOptions = {
@@ -95,10 +72,12 @@ export function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  // Local Strategy Setup
   passport.use(new LocalStrategy(async (username, password, done) => {
     try {
-      console.log(`Attempting login for user: ${username}`);
+      console.log(`[Auth] Login attempt for username: ${username}`);
 
+      // Find user
       const [user] = await db
         .select()
         .from(users)
@@ -106,32 +85,35 @@ export function setupAuth(app: Express) {
         .limit(1);
 
       if (!user) {
-        console.log(`User not found: ${username}`);
+        console.log(`[Auth] User not found: ${username}`);
         return done(null, false, { message: "Invalid credentials" });
       }
 
+      // Compare password
       const isValidPassword = await comparePassword(password, user.password);
+      console.log(`[Auth] Password validation result for ${username}:`, isValidPassword);
+
       if (!isValidPassword) {
-        console.log(`Invalid password for user: ${username}`);
+        console.log(`[Auth] Invalid password for user: ${username}`);
         return done(null, false, { message: "Invalid credentials" });
       }
 
-      console.log(`Successful login for user: ${username} with role: ${user.role}`);
+      console.log(`[Auth] Successful login for user: ${username} (${user.role})`);
       return done(null, user);
     } catch (err) {
-      console.error('Login error:', err);
+      console.error('[Auth] Login error:', err);
       return done(err);
     }
   }));
 
-  passport.serializeUser((user, done) => {
-    console.log(`Serializing user: ${user.id}`);
+  passport.serializeUser((user: any, done) => {
+    console.log(`[Auth] Serializing user: ${user.id}`);
     done(null, user.id);
   });
 
   passport.deserializeUser(async (id: number, done) => {
     try {
-      console.log(`Deserializing user: ${id}`);
+      console.log(`[Auth] Deserializing user: ${id}`);
       const [user] = await db
         .select()
         .from(users)
@@ -139,45 +121,48 @@ export function setupAuth(app: Express) {
         .limit(1);
 
       if (!user) {
-        console.log(`User not found during deserialization: ${id}`);
+        console.log(`[Auth] User not found during deserialization: ${id}`);
         return done(null, false);
       }
 
-      console.log(`Successfully deserialized user: ${id} with role: ${user.role}`);
+      console.log(`[Auth] Successfully deserialized user: ${id} (${user.role})`);
       done(null, user);
     } catch (err) {
-      console.error('Deserialization error:', err);
+      console.error('[Auth] Deserialization error:', err);
       done(err);
     }
   });
 
+  // Authentication Routes
   app.post("/api/auth/login", (req, res, next) => {
+    console.log('[Auth] Login request received:', req.body.username);
+
     passport.authenticate("local", async (err: any, user: Express.User | false, info: any) => {
       if (err) {
-        console.error('Authentication error:', err);
-        return next(err);
+        console.error('[Auth] Authentication error:', err);
+        return res.status(500).json({ message: "Internal server error" });
       }
 
       if (!user) {
-        console.log('Login failed:', info?.message);
-        return res.status(401).json({ message: info?.message || "Invalid credentials" });
+        console.log('[Auth] Login failed:', info?.message);
+        return res.status(401).json({ message: "Invalid credentials" });
       }
 
       req.logIn(user, async (err) => {
         if (err) {
-          console.error('Login error:', err);
-          return next(err);
+          console.error('[Auth] Login error:', err);
+          return res.status(500).json({ message: "Login failed" });
         }
 
         try {
-          // Update last login
+          // Update last login timestamp
           await db.update(users)
             .set({ lastLogin: new Date() })
             .where(eq(users.id, user.id));
 
-          const tokens = generateTokens(user);
+          console.log(`[Auth] User logged in successfully: ${user.id} (${user.role})`);
 
-          // Send user info with role
+          // Send user info and role
           res.json({
             user: {
               id: user.id,
@@ -185,15 +170,40 @@ export function setupAuth(app: Express) {
               role: user.role,
               email: user.email,
               fullName: user.fullName
-            },
-            ...tokens
+            }
           });
         } catch (error) {
-          console.error('Post-login error:', error);
-          return next(error);
+          console.error('[Auth] Post-login error:', error);
+          return res.status(500).json({ message: "Login successful but failed to update last login" });
         }
       });
     })(req, res, next);
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    console.log('[Auth] Logout request received');
+    req.logout((err) => {
+      if (err) {
+        console.error('[Auth] Logout error:', err);
+        return res.status(500).json({ message: "Logout failed" });
+      }
+      res.json({ message: "Logout successful" });
+    });
+  });
+
+  app.get("/api/auth/user", (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    const user = req.user as Express.User;
+    res.json({
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      email: user.email,
+      fullName: user.fullName
+    });
   });
 
   // JWT Strategy
@@ -219,6 +229,29 @@ export function setupAuth(app: Express) {
   }));
 
 
+  function generateTokens(user: Express.User) {
+    const accessToken = jwt.sign(
+      {
+        id: user.id,
+        role: user.role,
+        type: 'access'
+      },
+      JWT_CONFIG.access.secret,
+      { expiresIn: JWT_CONFIG.access.expiresIn }
+    );
+
+    const refreshToken = jwt.sign(
+      {
+        id: user.id,
+        type: 'refresh'
+      },
+      JWT_CONFIG.refresh.secret,
+      { expiresIn: JWT_CONFIG.refresh.expiresIn }
+    );
+
+    return { accessToken, refreshToken };
+  }
+
   app.post("/api/auth/refresh", (req, res) => {
     const { refreshToken } = req.body;
 
@@ -238,85 +271,6 @@ export function setupAuth(app: Express) {
     }
   });
 
-  app.post("/api/auth/logout", (req, res) => {
-    req.logout((err) => {
-      if (err) {
-        return res.status(500).json({ message: "Logout failed" });
-      }
-      res.json({ message: "Logout successful" });
-    });
-  });
-
-  app.get("/api/auth/user", (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).send("Not authenticated");
-    }
-
-    res.json({
-      id: req.user.id,
-      username: req.user.username,
-      role: req.user.role,
-      email: req.user.email,
-      fullName: req.user.fullName
-    });
-  });
-
-  app.post("/api/auth/register", async (req, res) => {
-    try {
-      const result = userInputSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({
-          message: "Validation failed",
-          errors: result.error.issues
-        });
-      }
-
-      const { username, password, role } = result.data;
-
-      // Check if user exists
-      const [existingUser] = await db
-        .select()
-        .from(users)
-        .where(eq(users.username, username))
-        .limit(1);
-
-      if (existingUser) {
-        return res.status(400).json({
-          message: "Username already exists"
-        });
-      }
-
-      // Hash password
-      const hashedPassword = await hashPassword(password);
-
-      // Create user
-      const [newUser] = await db.insert(users)
-        .values({
-          username,
-          password: hashedPassword,
-          role,
-          email: username, // Since username is email
-          createdAt: new Date(),
-        })
-        .returning();
-
-      res.status(201).json({
-        message: "Registration successful",
-        user: {
-          id: newUser.id,
-          username: newUser.username,
-          role: newUser.role,
-          email: newUser.email
-        }
-      });
-    } catch (error) {
-      console.error("Registration error:", error);
-      res.status(500).json({
-        message: "Registration failed",
-        error: (error as Error).message
-      });
-    }
-  });
 
   // Configure OAuth providers if credentials exist
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
@@ -408,6 +362,63 @@ export function setupAuth(app: Express) {
       res.redirect(`/auth/success?tokens=${encodeURIComponent(JSON.stringify(tokens))}`);
     }
   );
+
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const result = userInputSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({
+          message: "Validation failed",
+          errors: result.error.issues
+        });
+      }
+
+      const { username, password, role } = result.data;
+
+      // Check if user exists
+      const [existingUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
+
+      if (existingUser) {
+        return res.status(400).json({
+          message: "Username already exists"
+        });
+      }
+
+      // Hash password
+      const hashedPassword = await hashPassword(password);
+
+      // Create user
+      const [newUser] = await db.insert(users)
+        .values({
+          username,
+          password: hashedPassword,
+          role,
+          email: username, // Since username is email
+          createdAt: new Date(),
+        })
+        .returning();
+
+      res.status(201).json({
+        message: "Registration successful",
+        user: {
+          id: newUser.id,
+          username: newUser.username,
+          role: newUser.role,
+          email: newUser.email
+        }
+      });
+    } catch (error) {
+      console.error("Registration error:", error);
+      res.status(500).json({
+        message: "Registration failed",
+        error: (error as Error).message
+      });
+    }
+  });
 }
 
 const userInputSchema = z.object({
