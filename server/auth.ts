@@ -6,7 +6,7 @@ import { Strategy as LinkedInStrategy } from "passport-linkedin-oauth2";
 import { type Express } from "express";
 import session from "express-session";
 import createMemoryStore from "memorystore";
-import { users } from "@db/schema";
+import { users, type SelectUser } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcrypt";

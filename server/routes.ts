@@ -6,6 +6,13 @@ import clientRouter from "./routes/client";
 import { db } from "@db";
 import { users } from "@db/schema";
 import { eq } from "drizzle-orm";
+import { requirePermission } from "./middleware/check-permission";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+
+// Configure multer for file uploads
+const upload = multer({ dest: 'uploads/' });
 
 export let wsService: WebSocketService;
 
@@ -914,7 +921,7 @@ export function registerRoutes(app: Express): Server {
     } catch (error) {
       console.error("Error generating report download:", error);
       res.status(500).send("Failed to generate report download");
-    }
+        }
   });
 
   app.get("/api/admin/service-feature-tiers", requirePermission('packages', 'read'), async (req, res) => {

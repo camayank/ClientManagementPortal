@@ -20,7 +20,7 @@ export async function hasPermission(userId: number, resource: string, action: st
 export function requirePermission(resource: string, action: string) {
   return async (req: Request, res: Response, next: NextFunction) => {
     if (!req.isAuthenticated()) {
-      return res.status(401).send("Unauthorized");
+      return res.status(401).json({ message: "Unauthorized" });
     }
 
     const user = req.user as any;
@@ -28,12 +28,16 @@ export function requirePermission(resource: string, action: string) {
       return next(); // Admin has all permissions
     }
 
-    const hasAccess = await hasPermission(user.id, resource, action);
-    if (!hasAccess) {
-      console.log(`Permission denied for user ${user.id} on ${resource}:${action}`);
-      return res.status(403).send("Forbidden");
+    try {
+      const hasAccess = await hasPermission(user.id, resource, action);
+      if (!hasAccess) {
+        console.log(`Permission denied for user ${user.id} on ${resource}:${action}`);
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      next();
+    } catch (error) {
+      console.error("Error checking permissions:", error);
+      res.status(500).json({ message: "Internal server error" });
     }
-
-    next();
   };
 }
