@@ -4,39 +4,43 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { useUser } from "@/hooks/use-user";
 import { Loader2 } from "lucide-react";
+import { ErrorBoundary } from "@/hooks/use-error-boundary";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth-page";
+
+// Admin imports
 import AdminDashboard from "@/pages/admin/dashboard";
-import ClientDashboard from "@/pages/client/dashboard";
 import AdminClients from "@/pages/admin/clients";
 import AdminDocuments from "@/pages/admin/documents";
 import AdminCredentials from "@/pages/admin/credentials";
-import ClientDocuments from "@/pages/client/documents";
-import PersonalInfo from "@/pages/client/personal-info";
-import ClientProjects from "@/pages/client/projects";
-import ProjectDetails from "@/pages/client/project-details";
 import AdminReports from "@/pages/admin/reports";
 import RoleManagement from "@/pages/role-management";
 import UserRoleManagement from "@/pages/admin/user-roles";
 import ClientOnboarding from "@/pages/admin/client-onboarding";
 import ServicePackages from "@/pages/admin/service-packages";
-import TasksPage from "@/pages/tasks";
 import WorkAllocation from "@/pages/admin/work-allocation";
 import QualityControl from "@/pages/admin/quality-control";
 import SLAManagement from "@/pages/admin/sla-management";
 import Escalations from "@/pages/admin/escalations";
+
+// Client imports
+import ClientDashboard from "@/pages/client/dashboard";
+import PersonalInfo from "@/pages/client/personal-info";
+import ClientProjects from "@/pages/client/projects";
+import ProjectDetails from "@/pages/client/project-details";
+import ClientDocuments from "@/pages/client/documents";
+import TasksPage from "@/pages/tasks";
 import ClientQualityReviews from "@/pages/client/quality-reviews";
 import ClientSLA from "@/pages/client/sla";
 import ClientSupport from "@/pages/client/support";
 import ClientCommunication from "@/pages/client/communication";
 
-function ProtectedRoute({ 
-  component: Component, 
-  isAdmin: requireAdmin 
-}: { 
-  component: React.ComponentType, 
-  isAdmin: boolean 
-}) {
+interface ProtectedRouteProps {
+  component: React.ComponentType;
+  isAdmin: boolean;
+}
+
+function ProtectedRoute({ component: Component, isAdmin: requireAdmin }: ProtectedRouteProps) {
   const { user, isAdmin } = useUser();
 
   if (!user || (requireAdmin && !isAdmin) || (!requireAdmin && isAdmin)) {
@@ -104,10 +108,12 @@ function Router() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <Router />
-      <Toaster />
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <Router />
+        <Toaster />
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

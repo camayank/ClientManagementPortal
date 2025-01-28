@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketService } from "./websocket/server";
 import { setupAuth, hashPassword } from "./auth";
 import { db } from "@db";
-import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles, clientOnboarding, servicePackages, clientServices, clientOnboardingDocuments, clientCommunications, serviceFeatureTiers, serviceFeatures, customPricingRules, tasks, taskCategories, taskDependencies, taskStatusHistory, insertTaskSchema, insertTaskCategorySchema } from "@db/schema";
+import analyticsRouter from "./routes/analytics";
 import multer from "multer";
 import { eq, and, sql, desc, or } from "drizzle-orm";
 import { requirePermission } from "./middleware/check-permission";
@@ -11,6 +11,7 @@ import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
 import { format, subDays, parseISO } from 'date-fns';
+import { clients, documents, projects, users, milestones, milestoneUpdates, projectTemplates, roles, permissions, rolePermissions, userRoles, clientOnboarding, servicePackages, clientServices, clientOnboardingDocuments, clientCommunications, serviceFeatureTiers, serviceFeatures, customPricingRules, tasks, taskCategories, taskDependencies, taskStatusHistory, insertTaskSchema, insertTaskCategorySchema } from "@db/schema";
 
 const upload = multer({
   dest: 'uploads/',
@@ -25,6 +26,9 @@ export function registerRoutes(app: Express): Server {
   setupAuth(app);
   const httpServer = createServer(app);
   wsService = new WebSocketService(httpServer);
+
+  // Register analytics routes
+  app.use("/api/analytics", analyticsRouter);
 
   app.post("/api/documents/upload", requirePermission('documents', 'create'), upload.single('file'), async (req, res) => {
     try {
@@ -658,6 +662,7 @@ export function registerRoutes(app: Express): Server {
   });
 
 
+
   app.get("/api/admin/reports", requirePermission('reports', 'read'), async (req, res) => {
     const { type, startDate, endDate } = req.query;
     if (!startDate || !endDate) {
@@ -895,7 +900,7 @@ export function registerRoutes(app: Express): Server {
         return res.status(400).json({
           message: "Name and level are required"
         });
-      }
+}
 
       const [updatedTier] = await db.update(serviceFeatureTiers)
         .set({

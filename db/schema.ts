@@ -232,6 +232,73 @@ export const clientOnboardingDocuments = pgTable("client_onboarding_documents", 
 });
 
 
+// Performance Analytics Tables
+export const analyticsMetrics = pgTable("analytics_metrics", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category", { 
+    enum: ["client", "project", "task", "quality", "sla", "financial"] 
+  }).notNull(),
+  unit: text("unit"),
+  aggregationType: text("aggregation_type", {
+    enum: ["count", "sum", "average", "min", "max"]
+  }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const analyticsDataPoints = pgTable("analytics_data_points", {
+  id: serial("id").primaryKey(),
+  metricId: integer("metric_id").references(() => analyticsMetrics.id).notNull(),
+  value: numeric("value").notNull(),
+  timestamp: timestamp("timestamp").defaultNow(),
+  entityType: text("entity_type", {
+    enum: ["client", "project", "task", "user", "team"]
+  }).notNull(),
+  entityId: integer("entity_id").notNull(),
+  metadata: jsonb("metadata"),
+});
+
+export const dashboardConfigs = pgTable("dashboard_configs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  name: text("name").notNull(),
+  layout: jsonb("layout").notNull(),
+  isDefault: boolean("is_default").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const dashboardWidgets = pgTable("dashboard_widgets", {
+  id: serial("id").primaryKey(),
+  dashboardId: integer("dashboard_id").references(() => dashboardConfigs.id).notNull(),
+  type: text("type", {
+    enum: ["chart", "metric", "table", "list"]
+  }).notNull(),
+  title: text("title").notNull(),
+  config: jsonb("config").notNull(),
+  position: integer("position").notNull(),
+  size: text("size", {
+    enum: ["small", "medium", "large"]
+  }).default("medium"),
+  refreshInterval: integer("refresh_interval").default(300), // in seconds
+});
+
+export const reportTemplates = pgTable("report_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  type: text("type", {
+    enum: ["performance", "financial", "quality", "operational"]
+  }).notNull(),
+  config: jsonb("config").notNull(),
+  schedule: text("schedule"), // cron expression for automated reports
+  createdBy: integer("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // New tables for enhanced service package management
 export const serviceFeatureTiers = pgTable("service_feature_tiers", {
   id: serial("id").primaryKey(),
@@ -592,6 +659,52 @@ export const selectTaskDependencySchema = createSelectSchema(taskDependencies);
 export const insertTaskStatusHistorySchema = createInsertSchema(taskStatusHistory);
 export const selectTaskStatusHistorySchema = createSelectSchema(taskStatusHistory);
 
+// Add schema validation
+export const insertAnalyticsMetricSchema = createInsertSchema(analyticsMetrics);
+export const selectAnalyticsMetricSchema = createSelectSchema(analyticsMetrics);
+export const insertAnalyticsDataPointSchema = createInsertSchema(analyticsDataPoints);
+export const selectAnalyticsDataPointSchema = createSelectSchema(analyticsDataPoints);
+export const insertDashboardConfigSchema = createInsertSchema(dashboardConfigs);
+export const selectDashboardConfigSchema = createSelectSchema(dashboardConfigs);
+export const insertDashboardWidgetSchema = createInsertSchema(dashboardWidgets);
+export const selectDashboardWidgetSchema = createSelectSchema(dashboardWidgets);
+export const insertReportTemplateSchema = createInsertSchema(reportTemplates);
+export const selectReportTemplateSchema = createSelectSchema(reportTemplates);
+
+// Add relations for analytics tables
+export const analyticsMetricsRelations = relations(analyticsMetrics, ({ many }) => ({
+  dataPoints: many(analyticsDataPoints),
+}));
+
+export const analyticsDataPointsRelations = relations(analyticsDataPoints, ({ one }) => ({
+  metric: one(analyticsMetrics, {
+    fields: [analyticsDataPoints.metricId],
+    references: [analyticsMetrics.id],
+  }),
+}));
+
+export const dashboardConfigsRelations = relations(dashboardConfigs, ({ one, many }) => ({
+  user: one(users, {
+    fields: [dashboardConfigs.userId],
+    references: [users.id],
+  }),
+  widgets: many(dashboardWidgets),
+}));
+
+export const dashboardWidgetsRelations = relations(dashboardWidgets, ({ one }) => ({
+  dashboard: one(dashboardConfigs, {
+    fields: [dashboardWidgets.dashboardId],
+    references: [dashboardConfigs.id],
+  }),
+}));
+
+export const reportTemplatesRelations = relations(reportTemplates, ({ one }) => ({
+  creator: one(users, {
+    fields: [reportTemplates.createdBy],
+    references: [users.id],
+  }),
+}));
+
 
 // Types
 export type User = typeof users.$inferSelect;
@@ -644,6 +757,17 @@ export type TaskDependency = typeof taskDependencies.$inferSelect;
 export type NewTaskDependency = typeof taskDependencies.$inferInsert;
 export type TaskStatusHistory = typeof taskStatusHistory.$inferSelect;
 export type NewTaskStatusHistory = typeof taskStatusHistory.$inferInsert;
+
+export type AnalyticsMetric = typeof analyticsMetrics.$inferSelect;
+export type NewAnalyticsMetric = typeof analyticsMetrics.$inferInsert;
+export type AnalyticsDataPoint = typeof analyticsDataPoints.$inferSelect;
+export type NewAnalyticsDataPoint = typeof analyticsDataPoints.$inferInsert;
+export type DashboardConfig = typeof dashboardConfigs.$inferSelect;
+export type NewDashboardConfig = typeof dashboardConfigs.$inferInsert;
+export type DashboardWidget = typeof dashboardWidgets.$inferSelect;
+export type NewDashboardWidget = typeof dashboardWidgets.$inferInsert;
+export type ReportTemplate = typeof reportTemplates.$inferSelect;
+export type NewReportTemplate = typeof reportTemplates.$inferInsert;
 
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
   category: one(taskCategories, {
