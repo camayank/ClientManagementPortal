@@ -38,7 +38,6 @@ export const requestLogger = expressWinston.logger({
   meta: true,
   msg: 'HTTP {{req.method}} {{req.url}}',
   expressFormat: true,
-  colorize: true,
   requestWhitelist: [...expressWinston.requestWhitelist, 'body'],
   responseWhitelist: [...expressWinston.responseWhitelist, 'body'],
   // Add request ID to each request
@@ -58,8 +57,7 @@ export const requestLogger = expressWinston.logger({
 export const errorLogger = expressWinston.errorLogger({
   winstonInstance: logger,
   meta: true,
-  msg: 'HTTP {{req.method}} {{req.url}} {{err.message}}',
-  colorize: true,
+  msg: '{{err.message}}',
   requestWhitelist: [...expressWinston.requestWhitelist, 'body'],
   responseWhitelist: [...expressWinston.responseWhitelist, 'body'],
 });

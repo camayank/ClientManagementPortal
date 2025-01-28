@@ -1,13 +1,17 @@
 import { db } from "@db";
 import { tasks, taskCategories, users, clients } from "@db/schema";
 import { eq, or } from "drizzle-orm";
-import { sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { Task, InsertTask } from "@db/schema";
 import { AppError } from "../middleware/error-handler";
 
 export class TaskService {
   static async getTasks(userId: number, userRole: string) {
     try {
+      // Create aliases for the users table to avoid naming conflicts
+      const assignedUser = alias(users, "assigned_user");
+      const reviewerUser = alias(users, "reviewer");
+
       const baseQuery = db.select({
         id: tasks.id,
         title: tasks.title,
@@ -28,27 +32,29 @@ export class TaskService {
         category: taskCategories,
         assignedTo: tasks.assignedTo,
         assignedUser: {
-          id: sql<number>`assigned_user.id`,
-          username: sql<string>`assigned_user.username`,
-          fullName: sql<string>`assigned_user.full_name`,
+          id: assignedUser.id,
+          username: assignedUser.username,
+          fullName: assignedUser.fullName,
         },
         reviewerId: tasks.reviewerId,
         reviewer: {
-          id: sql<number>`reviewer.id`,
-          username: sql<string>`reviewer.username`,
-          fullName: sql<string>`reviewer.full_name`,
+          id: reviewerUser.id,
+          username: reviewerUser.username,
+          fullName: reviewerUser.fullName,
         },
         clientId: tasks.clientId,
         client: clients,
       })
-        .from(tasks)
-        .leftJoin(taskCategories, eq(tasks.categoryId, taskCategories.id))
-        .leftJoin(users.as('assigned_user'), eq(tasks.assignedTo, users.id))
-        .leftJoin(users.as('reviewer'), eq(tasks.reviewerId, users.id))
-        .leftJoin(clients, eq(tasks.clientId, clients.id));
+      .from(tasks)
+      .leftJoin(taskCategories, eq(tasks.categoryId, taskCategories.id))
+      .leftJoin(assignedUser, eq(tasks.assignedTo, assignedUser.id))
+      .leftJoin(reviewerUser, eq(tasks.reviewerId, reviewerUser.id))
+      .leftJoin(clients, eq(tasks.clientId, clients.id));
 
+      // Apply role-based filters
       if (userRole === 'client') {
-        const [clientRecord] = await db.select()
+        const [clientRecord] = await db
+          .select()
           .from(clients)
           .where(eq(clients.userId, userId))
           .limit(1);
@@ -60,6 +66,7 @@ export class TaskService {
         return baseQuery.where(eq(tasks.clientId, clientRecord.id));
       }
 
+      // For non-admin/partner roles, only show assigned tasks
       if (!['admin', 'partner'].includes(userRole)) {
         return baseQuery.where(
           or(
@@ -70,17 +77,20 @@ export class TaskService {
       }
 
       return baseQuery;
-    } catch (error) {
+    } catch (error: unknown) {
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError(error.message || "Failed to fetch tasks", 500);
+      throw new AppError(
+        error instanceof Error ? error.message : "Failed to fetch tasks",
+        500
+      );
     }
   }
 
   static async createTask(taskData: InsertTask, userId: number): Promise<Task> {
     try {
-      const [newTask] = await db.insert(tasks)
+      const result = await db.insert(tasks)
         .values({
           ...taskData,
           status: 'pending_review',
@@ -90,16 +100,20 @@ export class TaskService {
         })
         .returning();
 
+      const newTask = result[0];
       if (!newTask) {
         throw new AppError("Failed to create task", 500);
       }
 
       return newTask;
-    } catch (error) {
+    } catch (error: unknown) {
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError(error.message || "Failed to create task", 500);
+      throw new AppError(
+        error instanceof Error ? error.message : "Failed to create task",
+        500
+      );
     }
   }
 
@@ -122,29 +136,36 @@ export class TaskService {
           : task.completedAt
       };
 
-      const [updatedTask] = await db.update(tasks)
+      const result = await db.update(tasks)
         .set(updates)
         .where(eq(tasks.id, id))
         .returning();
 
+      const updatedTask = result[0];
       if (!updatedTask) {
         throw new AppError("Failed to update task", 500);
       }
 
       return updatedTask;
-    } catch (error) {
+    } catch (error: unknown) {
       if (error instanceof AppError) {
         throw error;
       }
-      throw new AppError(error.message || "Failed to update task", 500);
+      throw new AppError(
+        error instanceof Error ? error.message : "Failed to update task",
+        500
+      );
     }
   }
 
   static async getTaskCategories() {
     try {
       return db.select().from(taskCategories);
-    } catch (error) {
-      throw new AppError(error.message || "Failed to fetch task categories", 500);
+    } catch (error: unknown) {
+      throw new AppError(
+        error instanceof Error ? error.message : "Failed to fetch task categories",
+        500
+      );
     }
   }
 

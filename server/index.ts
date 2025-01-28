@@ -14,8 +14,25 @@ const app = express();
 // Trust proxy must be set before rate limiter
 app.set('trust proxy', 1);
 
-// Apply security headers
-app.use(helmet());
+// Apply security headers with development-friendly config
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:", "https:"],
+      connectSrc: ["'self'", "wss:", "https:", "http:"],
+      fontSrc: ["'self'", "data:", "https:"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'self'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginOpenerPolicy: { policy: "same-origin" }
+}));
 
 // Apply CORS middleware first
 app.use(corsMiddleware);
@@ -65,7 +82,7 @@ app.use("/api", apiLimiter);
 
   // ALWAYS serve the app on port 5000
   const PORT = process.env.PORT || 5000;
-  server.listen(PORT, () => {
+  server.listen(PORT, "0.0.0.0", () => {
     log(`Server running in ${process.env.NODE_ENV || 'development'} mode`);
     log(`Server listening on port ${PORT}`);
   });

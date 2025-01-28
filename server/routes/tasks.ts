@@ -45,7 +45,7 @@ router.get("/",
         throw new AppError("Authentication required", 401);
       }
 
-      const taskList = await TaskService.getTasks(user.id, user.role, queryParams.data);
+      const taskList = await TaskService.getTasks(user.id, user.role);
       res.json(taskList);
     } catch (error: any) {
       if (error instanceof AppError) {
