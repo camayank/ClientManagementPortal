@@ -798,7 +798,7 @@ export type NewAnalyticsDataPoint = typeof analyticsDataPoints.$inferInsert;
 export type DashboardConfig = typeof dashboardConfigs.$inferSelect;
 export type NewDashboardConfig = typeof dashboardConfigs.$inferInsert;
 export type DashboardWidget = typeof dashboardWidgets.$inferSelect;
-export type NewDashboardWidget = typeofdashboardWidgets.$inferInsert;
+export type NewDashboardWidget = typeof dashboardWidgets.$inferInsert;
 export type ReportTemplate = typeof reportTemplates.$inferSelect;
 export type NewReportTemplate = typeof reportTemplates.$inferInsert;
 
