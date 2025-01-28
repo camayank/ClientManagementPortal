@@ -12,9 +12,11 @@ router.get("/", requirePermission('tasks', 'read'), async (req: Request, res: Re
     const user = req.user as any;
     const taskList = await TaskService.getTasks(user.id, user.role);
     res.json(taskList);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error fetching tasks:", error);
-    res.status(500).send("Failed to fetch tasks");
+    res.status(error.statusCode || 500).json({
+      message: error.message || "Failed to fetch tasks"
+    });
   }
 });
 
@@ -32,11 +34,10 @@ router.post("/", requirePermission('tasks', 'create'), async (req: Request, res:
     const user = req.user as any;
     const newTask = await TaskService.createTask(result.data, user.id);
     res.status(201).json(newTask);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error creating task:", error);
-    res.status(500).json({
-      message: "Failed to create task",
-      error: (error as Error).message,
+    res.status(error.statusCode || 500).json({
+      message: error.message || "Failed to create task"
     });
   }
 });
@@ -46,23 +47,19 @@ router.patch("/:id", requirePermission('tasks', 'update'), async (req: Request, 
   try {
     const { id } = req.params;
     const user = req.user as any;
+    const taskId = parseInt(id);
 
-    // Authorization check can be moved to service layer if needed
-    if (user.role !== 'admin' && user.role !== 'partner') {
-      const task = await TaskService.getTasks(user.id, user.role);
-      const userTask = task.find(t => t.id === parseInt(id));
-      if (!userTask || (userTask.assignedTo !== user.id && userTask.reviewerId !== user.id)) {
-        return res.status(403).json({ message: "Not authorized to update this task" });
-      }
+    const hasAccess = await TaskService.validateTaskAccess(taskId, user.id, user.role);
+    if (!hasAccess) {
+      return res.status(403).json({ message: "Not authorized to update this task" });
     }
 
-    const updatedTask = await TaskService.updateTask(parseInt(id), req.body);
+    const updatedTask = await TaskService.updateTask(taskId, req.body);
     res.json(updatedTask);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error updating task:", error);
-    res.status(500).json({
-      message: "Failed to update task",
-      error: (error as Error).message,
+    res.status(error.statusCode || 500).json({
+      message: error.message || "Failed to update task"
     });
   }
 });
@@ -72,9 +69,11 @@ router.get("/categories", requirePermission('tasks', 'read'), async (_req: Reque
   try {
     const categories = await TaskService.getTaskCategories();
     res.json(categories);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error fetching task categories:", error);
-    res.status(500).send("Failed to fetch task categories");
+    res.status(error.statusCode || 500).json({
+      message: error.message || "Failed to fetch task categories"
+    });
   }
 });
 
