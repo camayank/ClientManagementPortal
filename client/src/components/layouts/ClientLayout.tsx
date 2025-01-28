@@ -13,86 +13,91 @@ import {
   AlertTriangle,
   MessageSquare
 } from "lucide-react";
+import { BaseLayout } from "./BaseLayout";
 
-export function ClientLayout({ children }: { children: React.ReactNode }) {
+function ClientSidebar() {
   const { logout } = useUser();
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <div className="flex h-screen">
-        <aside className="w-64 bg-white border-r">
-          <div className="p-4">
-            <h1 className="text-xl font-bold text-primary">Client Portal</h1>
-          </div>
-          <nav className="space-y-1 p-2">
-            <Link href="/client">
-              <Button variant="ghost" className="w-full justify-start">
-                <LayoutDashboard className="mr-2 h-4 w-4" />
-                Dashboard
-              </Button>
-            </Link>
-            <Link href="/client/personal-info">
-              <Button variant="ghost" className="w-full justify-start">
-                <User className="mr-2 h-4 w-4" />
-                Personal Info
-              </Button>
-            </Link>
-            <Link href="/client/projects">
-              <Button variant="ghost" className="w-full justify-start">
-                <FolderKanban className="mr-2 h-4 w-4" />
-                Projects
-              </Button>
-            </Link>
-            <Link href="/client/documents">
-              <Button variant="ghost" className="w-full justify-start">
-                <FileText className="mr-2 h-4 w-4" />
-                Documents
-              </Button>
-            </Link>
-            <Link href="/client/tasks">
-              <Button variant="ghost" className="w-full justify-start">
-                <ListTodo className="mr-2 h-4 w-4" />
-                Tasks
-              </Button>
-            </Link>
-            <Link href="/client/quality-reviews">
-              <Button variant="ghost" className="w-full justify-start">
-                <CheckSquare className="mr-2 h-4 w-4" />
-                Quality Reviews
-              </Button>
-            </Link>
-            <Link href="/client/sla">
-              <Button variant="ghost" className="w-full justify-start">
-                <Clock className="mr-2 h-4 w-4" />
-                SLA Tracking
-              </Button>
-            </Link>
-            <Link href="/client/support">
-              <Button variant="ghost" className="w-full justify-start">
-                <AlertTriangle className="mr-2 h-4 w-4" />
-                Support
-              </Button>
-            </Link>
-            <Link href="/client/communication">
-              <Button variant="ghost" className="w-full justify-start">
-                <MessageSquare className="mr-2 h-4 w-4" />
-                Communication
-              </Button>
-            </Link>
-            <Button 
-              variant="ghost" 
-              className="w-full justify-start text-red-600"
-              onClick={() => logout()}
-            >
-              <LogOut className="mr-2 h-4 w-4" />
-              Logout
-            </Button>
-          </nav>
-        </aside>
-        <main className="flex-1 overflow-y-auto p-8">
-          {children}
-        </main>
+    <aside className="w-64 bg-white border-r">
+      <div className="p-4">
+        <h1 className="text-xl font-bold text-primary">Client Portal</h1>
       </div>
-    </div>
+      <nav className="space-y-1 p-2">
+        <Link href="/client">
+          <Button variant="ghost" className="w-full justify-start">
+            <LayoutDashboard className="mr-2 h-4 w-4" />
+            Dashboard
+          </Button>
+        </Link>
+        <Link href="/client/personal-info">
+          <Button variant="ghost" className="w-full justify-start">
+            <User className="mr-2 h-4 w-4" />
+            Personal Info
+          </Button>
+        </Link>
+        <Link href="/client/projects">
+          <Button variant="ghost" className="w-full justify-start">
+            <FolderKanban className="mr-2 h-4 w-4" />
+            Projects
+          </Button>
+        </Link>
+        <Link href="/client/documents">
+          <Button variant="ghost" className="w-full justify-start">
+            <FileText className="mr-2 h-4 w-4" />
+            Documents
+          </Button>
+        </Link>
+        <Link href="/client/tasks">
+          <Button variant="ghost" className="w-full justify-start">
+            <ListTodo className="mr-2 h-4 w-4" />
+            Tasks
+          </Button>
+        </Link>
+        <Link href="/client/quality-reviews">
+          <Button variant="ghost" className="w-full justify-start">
+            <CheckSquare className="mr-2 h-4 w-4" />
+            Quality Reviews
+          </Button>
+        </Link>
+        <Link href="/client/sla">
+          <Button variant="ghost" className="w-full justify-start">
+            <Clock className="mr-2 h-4 w-4" />
+            SLA Tracking
+          </Button>
+        </Link>
+        <Link href="/client/support">
+          <Button variant="ghost" className="w-full justify-start">
+            <AlertTriangle className="mr-2 h-4 w-4" />
+            Support
+          </Button>
+        </Link>
+        <Link href="/client/communication">
+          <Button variant="ghost" className="w-full justify-start">
+            <MessageSquare className="mr-2 h-4 w-4" />
+            Communication
+          </Button>
+        </Link>
+        <Button 
+          variant="ghost" 
+          className="w-full justify-start text-red-600"
+          onClick={() => logout()}
+        >
+          <LogOut className="mr-2 h-4 w-4" />
+          Logout
+        </Button>
+      </nav>
+    </aside>
+  );
+}
+
+export function ClientLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <BaseLayout
+      sidebar={<ClientSidebar />}
+      className="p-8"
+    >
+      {children}
+    </BaseLayout>
   );
 }
