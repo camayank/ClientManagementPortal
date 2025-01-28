@@ -3,10 +3,7 @@ import { tasks, taskCategories, users, clients } from "@db/schema";
 import { eq, or } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import type { Task, InsertTask } from "@db/schema";
-
-interface TaskError extends Error {
-  statusCode?: number;
-}
+import { AppError } from "../middleware/error-handler";
 
 export class TaskService {
   static async getTasks(userId: number, userRole: string) {
@@ -57,9 +54,7 @@ export class TaskService {
           .limit(1);
 
         if (!clientRecord) {
-          const error: TaskError = new Error("Client record not found");
-          error.statusCode = 404;
-          throw error;
+          throw new AppError("Client record not found", 404);
         }
 
         return baseQuery.where(eq(tasks.clientId, clientRecord.id));
@@ -76,11 +71,10 @@ export class TaskService {
 
       return baseQuery;
     } catch (error) {
-      const taskError: TaskError = error as TaskError;
-      if (!taskError.statusCode) {
-        taskError.statusCode = 500;
+      if (error instanceof AppError) {
+        throw error;
       }
-      throw taskError;
+      throw new AppError(error.message || "Failed to fetch tasks", 500);
     }
   }
 
@@ -97,18 +91,15 @@ export class TaskService {
         .returning();
 
       if (!newTask) {
-        const error: TaskError = new Error("Failed to create task");
-        error.statusCode = 500;
-        throw error;
+        throw new AppError("Failed to create task", 500);
       }
 
       return newTask;
     } catch (error) {
-      const taskError: TaskError = error as TaskError;
-      if (!taskError.statusCode) {
-        taskError.statusCode = 500;
+      if (error instanceof AppError) {
+        throw error;
       }
-      throw taskError;
+      throw new AppError(error.message || "Failed to create task", 500);
     }
   }
 
@@ -120,9 +111,7 @@ export class TaskService {
         .limit(1);
 
       if (!task) {
-        const error: TaskError = new Error("Task not found");
-        error.statusCode = 404;
-        throw error;
+        throw new AppError("Task not found", 404);
       }
 
       const updates = {
@@ -139,18 +128,15 @@ export class TaskService {
         .returning();
 
       if (!updatedTask) {
-        const error: TaskError = new Error("Failed to update task");
-        error.statusCode = 500;
-        throw error;
+        throw new AppError("Failed to update task", 500);
       }
 
       return updatedTask;
     } catch (error) {
-      const taskError: TaskError = error as TaskError;
-      if (!taskError.statusCode) {
-        taskError.statusCode = 500;
+      if (error instanceof AppError) {
+        throw error;
       }
-      throw taskError;
+      throw new AppError(error.message || "Failed to update task", 500);
     }
   }
 
@@ -158,9 +144,7 @@ export class TaskService {
     try {
       return db.select().from(taskCategories);
     } catch (error) {
-      const taskError: TaskError = error as TaskError;
-      taskError.statusCode = 500;
-      throw taskError;
+      throw new AppError(error.message || "Failed to fetch task categories", 500);
     }
   }
 
