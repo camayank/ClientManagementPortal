@@ -237,8 +237,8 @@ export const analyticsMetrics = pgTable("analytics_metrics", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
-  category: text("category", { 
-    enum: ["client", "project", "task", "quality", "sla", "financial"] 
+  category: text("category", {
+    enum: ["client", "project", "task", "quality", "sla", "financial"]
   }).notNull(),
   unit: text("unit"),
   aggregationType: text("aggregation_type", {
@@ -357,7 +357,22 @@ export const taskCategories = pgTable("task_categories", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
+  type: text("type", {
+    enum: [
+      "tax_return",
+      "audit",
+      "bookkeeping",
+      "payroll",
+      "financial_planning",
+      "advisory",
+      "tax_planning",
+      "compliance",
+      "general"
+    ]
+  }).notNull().default("general"),
   color: text("color"),
+  requiresReview: boolean("requires_review").default(true),
+  defaultDeadlineDays: integer("default_deadline_days"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -367,15 +382,33 @@ export const tasks = pgTable("tasks", {
   description: text("description"),
   categoryId: integer("category_id").references(() => taskCategories.id),
   assignedTo: integer("assigned_to").references(() => users.id),
+  reviewerId: integer("reviewer_id").references(() => users.id),
   createdBy: integer("created_by").references(() => users.id).notNull(),
   priority: text("priority", { enum: ["low", "medium", "high", "urgent"] }).default("medium"),
   status: text("status", {
-    enum: ["backlog", "todo", "in_progress", "in_review", "blocked", "completed"]
+    enum: [
+      "backlog",
+      "todo",
+      "in_progress",
+      "pending_review",
+      "in_review",
+      "revision_needed",
+      "blocked",
+      "completed"
+    ]
   }).default("todo"),
+  clientId: integer("client_id").references(() => clients.id),
+  projectId: integer("project_id").references(() => projects.id),
   dueDate: timestamp("due_date"),
   estimatedHours: numeric("estimated_hours"),
   actualHours: numeric("actual_hours"),
-  projectId: integer("project_id").references(() => projects.id),
+  taxYear: integer("tax_year"),
+  filingDeadline: timestamp("filing_deadline"),
+  extensionRequested: boolean("extension_requested").default(false),
+  extensionDeadline: timestamp("extension_deadline"),
+  complexity: text("complexity", {
+    enum: ["simple", "moderate", "complex"]
+  }).default("moderate"),
   parentTaskId: integer("parent_task_id").references(() => tasks.id),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at"),
@@ -765,7 +798,7 @@ export type NewAnalyticsDataPoint = typeof analyticsDataPoints.$inferInsert;
 export type DashboardConfig = typeof dashboardConfigs.$inferSelect;
 export type NewDashboardConfig = typeof dashboardConfigs.$inferInsert;
 export type DashboardWidget = typeof dashboardWidgets.$inferSelect;
-export type NewDashboardWidget = typeof dashboardWidgets.$inferInsert;
+export type NewDashboardWidget = typeofdashboardWidgets.$inferInsert;
 export type ReportTemplate = typeof reportTemplates.$inferSelect;
 export type NewReportTemplate = typeof reportTemplates.$inferInsert;
 
@@ -778,9 +811,13 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
     fields: [tasks.assignedTo],
     references: [users.id],
   }),
-  creator: one(users, {
-    fields: [tasks.createdBy],
+  reviewer: one(users, {
+    fields: [tasks.reviewerId],
     references: [users.id],
+  }),
+  client: one(clients, {
+    fields: [tasks.clientId],
+    references: [clients.id],
   }),
   project: one(projects, {
     fields: [tasks.projectId],

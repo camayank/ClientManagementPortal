@@ -1,7 +1,10 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { CalendarIcon, Clock, AlertTriangle, User2 } from "lucide-react";
 import type { Task } from "@db/schema";
+import { format } from "date-fns";
 
 interface TaskColumnProps {
   id: string;
@@ -37,10 +40,16 @@ function SortableTask({ task }: SortableTaskProps) {
   };
 
   const priorityColors = {
-    low: "bg-blue-100 text-blue-800",
-    medium: "bg-yellow-100 text-yellow-800",
-    high: "bg-orange-100 text-orange-800",
-    urgent: "bg-red-100 text-red-800",
+    low: "bg-blue-100 text-blue-800 border-blue-200",
+    medium: "bg-yellow-100 text-yellow-800 border-yellow-200",
+    high: "bg-orange-100 text-orange-800 border-orange-200",
+    urgent: "bg-red-100 text-red-800 border-red-200",
+  };
+
+  const complexityBadges = {
+    simple: "bg-green-100 text-green-800 border-green-200",
+    moderate: "bg-blue-100 text-blue-800 border-blue-200",
+    complex: "bg-purple-100 text-purple-800 border-purple-200",
   };
 
   return (
@@ -52,23 +61,62 @@ function SortableTask({ task }: SortableTaskProps) {
       className="p-3 cursor-move hover:shadow-md transition-shadow"
     >
       <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h4 className="font-medium">{task.title}</h4>
-          <span
-            className={`px-2 py-1 rounded-full text-xs font-medium ${
-              priorityColors[task.priority as keyof typeof priorityColors]
-            }`}
-          >
-            {task.priority}
-          </span>
+        <div className="flex items-start justify-between">
+          <h4 className="font-medium flex-grow">{task.title}</h4>
+          <div className="flex gap-1">
+            <Badge
+              variant="outline"
+              className={`${priorityColors[task.priority as keyof typeof priorityColors]}`}
+            >
+              {task.priority}
+            </Badge>
+          </div>
         </div>
+
         {task.description && (
           <p className="text-sm text-gray-600 line-clamp-2">{task.description}</p>
         )}
-        {task.dueDate && (
-          <p className="text-xs text-gray-500">
-            Due: {new Date(task.dueDate).toLocaleDateString()}
-          </p>
+
+        <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+          {task.assignedTo && (
+            <div className="flex items-center gap-1">
+              <User2 className="h-3 w-3" />
+              <span>Assigned</span>
+            </div>
+          )}
+          {task.dueDate && (
+            <div className="flex items-center gap-1">
+              <CalendarIcon className="h-3 w-3" />
+              <span>{format(new Date(task.dueDate), "MMM d, yyyy")}</span>
+            </div>
+          )}
+          {task.estimatedHours && (
+            <div className="flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              <span>{task.estimatedHours}h</span>
+            </div>
+          )}
+          {task.complexity && (
+            <Badge
+              variant="outline"
+              className={`${complexityBadges[task.complexity as keyof typeof complexityBadges]}`}
+            >
+              {task.complexity}
+            </Badge>
+          )}
+        </div>
+
+        {task.taxYear && (
+          <div className="flex items-center gap-2 mt-2">
+            <Badge variant="outline" className="bg-gray-100">
+              Tax Year {task.taxYear}
+            </Badge>
+            {task.extensionRequested && (
+              <Badge variant="outline" className="bg-orange-100 text-orange-800">
+                Extended
+              </Badge>
+            )}
+          </div>
         )}
       </div>
     </Card>
