@@ -435,6 +435,8 @@ export const taskStatusHistory = pgTable("task_status_history", {
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   roles: many(userRoles),
+  assignedTasks: many(tasks, { relationName: "assignedUser" }),
+  reviewTasks: many(tasks, { relationName: "reviewer" }),
 }));
 
 export const rolesRelations = relations(roles, ({ many }) => ({
@@ -783,7 +785,7 @@ export type NewPackageChangeHistory = typeof packageChangeHistory.$inferInsert;
 
 // Add types for task tables
 export type Task = typeof tasks.$inferSelect;
-export type NewTask = typeof tasks.$inferInsert;
+export type InsertTask = typeof tasks.$inferInsert;
 export type TaskCategory = typeof taskCategories.$inferSelect;
 export type NewTaskCategory = typeof taskCategories.$inferInsert;
 export type TaskDependency = typeof taskDependencies.$inferSelect;
