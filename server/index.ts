@@ -14,34 +14,25 @@ const app = express();
 // Trust proxy must be set before rate limiter
 app.set('trust proxy', 1);
 
-// Apply security headers with development-friendly config
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "blob:", "https:"],
-      connectSrc: ["'self'", "wss:", "https:", "http:"],
-      fontSrc: ["'self'", "data:", "https:"],
-      objectSrc: ["'none'"],
-      mediaSrc: ["'self'"],
-      frameSrc: ["'self'"],
-    },
-  },
-  crossOriginEmbedderPolicy: false,
-  crossOriginResourcePolicy: { policy: "cross-origin" },
-  crossOriginOpenerPolicy: { policy: "same-origin" }
-}));
-
-// Apply CORS middleware first
+// Apply CORS middleware first, before any other middleware
 app.use(corsMiddleware);
+
+// Basic middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+// Apply security headers with very relaxed development config
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // Disable CSP in development
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: false,
+    crossOriginOpenerPolicy: false,
+  })
+);
 
 // Add request logging with tracing
 app.use(requestLogger);
-
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
 
 // Apply rate limiting middleware
 app.use("/api/login", authLimiter);
