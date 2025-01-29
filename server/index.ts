@@ -44,24 +44,38 @@ app.use(handleOptions);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// Security headers configuration
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      connectSrc: ["'self'", "https:", "http:", "ws:", "wss:"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "https:"],
-      fontSrc: ["'self'", "https:", "data:"],
-      frameAncestors: ["'self'"],
-      formAction: ["'self'"],
-    },
-  },
-  crossOriginEmbedderPolicy: false,
-  crossOriginResourcePolicy: { policy: "cross-origin" },
-  crossOriginOpenerPolicy: false,
-}));
+// Security headers configuration - Development friendly
+if (app.get("env") === "development") {
+  app.use(
+    helmet({
+      contentSecurityPolicy: false, // Disable CSP in development
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: false,
+      crossOriginOpenerPolicy: false,
+    })
+  );
+} else {
+  // Production security headers
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          connectSrc: ["'self'", "https:", "http:", "ws:", "wss:"],
+          scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", "data:", "https:"],
+          fontSrc: ["'self'", "https:", "data:"],
+          frameAncestors: ["'self'"],
+          formAction: ["'self'"],
+        },
+      },
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+      crossOriginOpenerPolicy: false,
+    })
+  );
+}
 
 // Logging
 app.use(requestLogger);
@@ -80,10 +94,10 @@ app.use("/api", apiLimiter);
   app.use(errorHandler);
 
   // Static file serving based on environment
-  if (app.get("env") === "production") {
-    serveStatic(app);
-  } else {
+  if (app.get("env") === "development") {
     await setupVite(app, server);
+  } else {
+    serveStatic(app);
   }
 
   // Start server
