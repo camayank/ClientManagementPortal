@@ -1,6 +1,6 @@
 import { AdminLayout } from "@/components/layouts/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { GanttChartSquare, Users, Calendar, AlertCircle } from "lucide-react";
+import { GanttChartSquare, Users, Calendar, AlertCircle, Search } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable } from "@/components/ui/data-table";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/select";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Tooltip } from "@/components/ui/tooltip";
 
 // Types for our work allocation system
 type WorkloadMetrics = {
@@ -20,7 +22,6 @@ type WorkloadMetrics = {
   dueThisWeek: number;
   availableTeamMembers: number;
   scheduledTasks: number;
-  averageTaskTime: number;
   urgentTasks: number;
 };
 
@@ -53,7 +54,7 @@ export default function WorkAllocation() {
   const { data: teamMembers } = useQuery<TeamMember[]>({
     queryKey: ["teamMembers", filterRole, filterLocation],
     queryFn: async () => {
-      const response = await fetch(`/api/team-members?role=${filterRole}&location=${filterLocation}`);
+      const response = await fetch(`/api/analytics/team-members?role=${filterRole}&location=${filterLocation}`);
       if (!response.ok) throw new Error("Failed to fetch team members");
       return response.json();
     }
@@ -61,50 +62,75 @@ export default function WorkAllocation() {
 
   const columns = [
     {
-      accessorKey: "name",
+      accessorKey: "name" as keyof TeamMember,
       header: "Name",
+      sortable: true,
+      searchable: true,
     },
     {
-      accessorKey: "role",
+      accessorKey: "role" as keyof TeamMember,
       header: "Role",
-      cell: ({ row }) => (
+      sortable: true,
+      cell: ({ row }: { row: { original: TeamMember } }) => (
         <Badge variant={getBadgeVariant(row.original.role)}>{row.original.role}</Badge>
       ),
     },
     {
-      accessorKey: "workflowPosition",
+      accessorKey: "workflowPosition" as keyof TeamMember,
       header: "Workflow Position",
-      cell: ({ row }) => (
-        <Badge variant="outline">{row.original.workflowPosition}</Badge>
+      sortable: true,
+      cell: ({ row }: { row: { original: TeamMember } }) => (
+        <Badge variant="outline" className="capitalize">
+          {row.original.workflowPosition}
+        </Badge>
       ),
     },
     {
-      accessorKey: "experienceLevel",
+      accessorKey: "experienceLevel" as keyof TeamMember,
       header: "Experience",
+      sortable: true,
     },
     {
-      accessorKey: "location",
+      accessorKey: "location" as keyof TeamMember,
       header: "Location",
+      sortable: true,
     },
     {
-      accessorKey: "currentLoad",
-      header: "Current Load",
-      cell: ({ row }) => (
-        <div className="w-full bg-secondary rounded-full h-2">
-          <div 
-            className="bg-primary h-2 rounded-full" 
-            style={{ width: `${row.original.currentLoad}%` }}
-          />
-        </div>
+      accessorKey: "currentLoad" as keyof TeamMember,
+      header: "Workload",
+      sortable: true,
+      cell: ({ row }: { row: { original: TeamMember } }) => (
+        <Tooltip content={`${row.original.availableHours}h available this week`}>
+          <div className="w-full space-y-1">
+            <Progress value={row.original.currentLoad} className="h-2" />
+            <p className="text-xs text-muted-foreground">
+              {row.original.currentLoad}% utilized
+            </p>
+          </div>
+        </Tooltip>
       ),
     },
     {
       accessorKey: "actions",
       header: "Actions",
-      cell: ({ row }) => (
-        <Button variant="outline" size="sm" onClick={() => handleAssignTask(row.original.id)}>
-          Assign Task
-        </Button>
+      cell: ({ row }: { row: { original: TeamMember } }) => (
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => handleAssignTask(row.original.id)}
+            disabled={row.original.currentLoad >= 100}
+          >
+            Assign Task
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleViewDetails(row.original.id)}
+          >
+            View Details
+          </Button>
+        </div>
       ),
     },
   ];
@@ -114,12 +140,20 @@ export default function WorkAllocation() {
     console.log("Assigning task to user:", userId);
   };
 
-  const getBadgeVariant = (role: string) => {
+  const handleViewDetails = (userId: number) => {
+    // This will show a detailed view of the team member's workload
+    console.log("Viewing details for user:", userId);
+  };
+
+  const getBadgeVariant = (role: string): "default" | "destructive" | "outline" | "secondary" => {
     const variants: Record<string, "default" | "destructive" | "outline" | "secondary"> = {
       us_office_senior: "default",
       us_remote_senior: "default",
       offshore_team_lead: "secondary",
       outsource_lead: "outline",
+      maker: "default",
+      checker: "secondary",
+      reviewer: "outline",
     };
     return variants[role] || "default";
   };
@@ -225,6 +259,8 @@ export default function WorkAllocation() {
                 columns={columns}
                 data={teamMembers}
                 pagination
+                pageSize={10}
+                searchable
               />
             )}
           </CardContent>
