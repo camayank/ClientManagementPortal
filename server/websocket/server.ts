@@ -1,14 +1,14 @@
 import { WebSocket, WebSocketServer } from 'ws';
 import type { Server } from 'http';
 import type { IncomingMessage } from 'http';
-import type { User } from '@db/schema';
 import { db } from "@db";
-import { projects, users } from "@db/schema";
-import { eq } from "drizzle-orm";
+import { projects, users, roles, userRoles } from "@db/schema";
+import { eq, and } from "drizzle-orm";
 
 interface ExtWebSocket extends WebSocket {
   userId?: number;
   isAlive: boolean;
+  userRole?: string;
 }
 
 interface WSMessage {
@@ -30,69 +30,54 @@ export class WebSocketService {
     this.wss = new WebSocketServer({ 
       server,
       path: '/ws',
-      // Ignore Vite HMR websocket connections
-      verifyClient: (info: VerifyClientInfo) => {
-        return info.req.headers['sec-websocket-protocol'] !== 'vite-hmr';
+      verifyClient: async (info: VerifyClientInfo, callback) => {
+        try {
+          // Skip Vite HMR connections
+          if (info.req.headers['sec-websocket-protocol'] === 'vite-hmr') {
+            return callback(false);
+          }
+
+          const userId = (info.req as any).session?.passport?.user;
+          if (!userId) {
+            return callback(false, 401, 'Authentication required');
+          }
+
+          // Verify user exists and get their role
+          const [user] = await db.select({
+            role: users.role
+          })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
+
+          if (!user) {
+            return callback(false, 403, 'User not found');
+          }
+
+          // Add user role to request for later use
+          (info.req as any).userRole = user.role;
+          callback(true);
+        } catch (error) {
+          console.error('WebSocket verification error:', error);
+          callback(false, 500, 'Internal server error');
+        }
       }
     });
 
     this.setupWebSocketServer();
+    this.startHeartbeat();
   }
 
-  private setupWebSocketServer() {
-    this.wss.on('connection', (ws: ExtWebSocket, req) => {
-      // Extract user information from session
-      const userId = (req as any).session?.passport?.user;
-      if (!userId) {
-        ws.close(1008, 'Authentication required');
-        return;
-      }
-
-      ws.userId = userId;
-      ws.isAlive = true;
-      this.clients.set(userId, ws);
-
-      // Setup ping-pong for connection health check
-      ws.on('pong', () => {
-        ws.isAlive = true;
-      });
-
-      // Handle incoming messages
-      ws.on('message', (data: string) => {
-        try {
-          const message: WSMessage = JSON.parse(data);
-          this.handleMessage(ws, message);
-        } catch (error) {
-          console.error('Failed to parse WebSocket message:', error);
-        }
-      });
-
-      // Handle client disconnect
-      ws.on('close', () => {
-        if (ws.userId) {
-          this.clients.delete(ws.userId);
-        }
-      });
-
-      // Send welcome message
-      this.sendToClient(ws, {
-        type: 'notification',
-        payload: {
-          message: 'Connected to WebSocket server',
-          timestamp: new Date().toISOString(),
-        }
-      });
-    });
-
-    // Setup periodic health checks
+  private startHeartbeat() {
     const interval = setInterval(() => {
-      for (const client of Array.from(this.wss.clients)) {
-        const ws = client as ExtWebSocket;
-        if (!ws.isAlive) {
-          return ws.terminate();
+      for (const [userId, client] of this.clients) {
+        if (!client.isAlive) {
+          client.terminate();
+          this.clients.delete(userId);
+          continue;
         }
-        ws.isAlive = false;
-        ws.ping();
+        client.isAlive = false;
+        client.ping();
       }
     }, 30000);
 
@@ -101,30 +86,147 @@ export class WebSocketService {
     });
   }
 
-  private handleMessage(ws: ExtWebSocket, message: WSMessage) {
+  private setupWebSocketServer() {
+    this.wss.on('connection', (ws: ExtWebSocket, req) => {
+      const userId = (req as any).session?.passport?.user;
+      const userRole = (req as any).userRole;
+
+      ws.userId = userId;
+      ws.userRole = userRole;
+      ws.isAlive = true;
+      this.clients.set(userId, ws);
+
+      ws.on('pong', () => {
+        ws.isAlive = true;
+      });
+
+      ws.on('message', async (data: string) => {
+        try {
+          const message: WSMessage = JSON.parse(data);
+          await this.handleMessage(ws, message);
+        } catch (error) {
+          console.error('Failed to handle WebSocket message:', error);
+          this.sendToClient(ws, {
+            type: 'notification',
+            payload: {
+              type: 'error',
+              message: 'Failed to process message',
+            }
+          });
+        }
+      });
+
+      ws.on('error', (error) => {
+        console.error('WebSocket error:', error);
+        ws.terminate();
+      });
+
+      ws.on('close', () => {
+        if (ws.userId) {
+          this.clients.delete(ws.userId);
+        }
+      });
+
+      // Send initial connection success
+      this.sendToClient(ws, {
+        type: 'notification',
+        payload: {
+          type: 'success',
+          message: 'Connected to real-time updates',
+          timestamp: new Date().toISOString(),
+        }
+      });
+    });
+  }
+
+  private async handleMessage(ws: ExtWebSocket, message: WSMessage) {
+    if (!ws.userId) return;
+
     switch (message.type) {
       case 'chat':
-        this.broadcastToAdmin({
-          type: 'chat',
-          payload: {
-            ...message.payload,
-            userId: ws.userId,
-            timestamp: new Date().toISOString(),
-          }
-        });
+        if (ws.userRole === 'admin' || message.payload.recipientId) {
+          await this.handleChatMessage(ws, message);
+        }
         break;
-      // Add more message type handlers here
+      case 'activity':
+        await this.handleActivityUpdate(ws, message);
+        break;
+      case 'milestone_created':
+      case 'milestone_updated':
+        await this.handleMilestoneUpdate(ws, message);
+        break;
     }
   }
 
-  // Send message to a specific client
+  private async handleChatMessage(ws: ExtWebSocket, message: WSMessage) {
+    const { recipientId, content } = message.payload;
+    const timestamp = new Date().toISOString();
+
+    // If recipient specified, send only to them
+    if (recipientId) {
+      this.sendToUser(recipientId, {
+        type: 'chat',
+        payload: {
+          senderId: ws.userId,
+          content,
+          timestamp,
+        }
+      });
+      return;
+    }
+
+    // Otherwise broadcast to admins
+    this.broadcastToAdmin({
+      type: 'chat',
+      payload: {
+        senderId: ws.userId,
+        content,
+        timestamp,
+      }
+    });
+  }
+
+  private async handleActivityUpdate(ws: ExtWebSocket, message: WSMessage) {
+    const { projectId, activityType, data } = message.payload;
+
+    if (!projectId) return;
+
+    await this.broadcastToProjectMembers(projectId, {
+      type: 'activity',
+      payload: {
+        projectId,
+        activityType,
+        data,
+        userId: ws.userId,
+        timestamp: new Date().toISOString(),
+      }
+    });
+  }
+
+  private async handleMilestoneUpdate(ws: ExtWebSocket, message: WSMessage) {
+    const { projectId, milestoneId, status, description } = message.payload;
+
+    if (!projectId || !milestoneId) return;
+
+    await this.broadcastToProjectMembers(projectId, {
+      type: message.type,
+      payload: {
+        projectId,
+        milestoneId,
+        status,
+        description,
+        updatedBy: ws.userId,
+        timestamp: new Date().toISOString(),
+      }
+    });
+  }
+
   public sendToClient(ws: WebSocket, message: WSMessage) {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(message));
     }
   }
 
-  // Send message to a specific user by ID
   public sendToUser(userId: number, message: WSMessage) {
     const client = this.clients.get(userId);
     if (client?.readyState === WebSocket.OPEN) {
@@ -132,27 +234,22 @@ export class WebSocketService {
     }
   }
 
-  // Broadcast message to all connected clients
   public broadcast(message: WSMessage) {
-    for (const client of Array.from(this.wss.clients)) {
+    this.wss.clients.forEach(client => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(JSON.stringify(message));
       }
-    }
+    });
   }
 
-  // Broadcast message to all admin users
   public broadcastToAdmin(message: WSMessage) {
-    for (const client of Array.from(this.wss.clients)) {
-      const ws = client as ExtWebSocket;
-      if (ws.readyState === WebSocket.OPEN && ws.userId) {
-        // You'll need to check if the user is an admin here
+    this.clients.forEach((client, userId) => {
+      if (client.readyState === WebSocket.OPEN && client.userRole === 'admin') {
         client.send(JSON.stringify(message));
       }
-    }
+    });
   }
 
-  // Broadcast message to all members of a project (admin and assigned client)
   public async broadcastToProjectMembers(projectId: number, message: WSMessage) {
     try {
       const [project] = await db.select({
@@ -168,21 +265,20 @@ export class WebSocketService {
         return;
       }
 
-      // Get client user ID
+      // Send to assigned client
       if (project.clientId) {
-        const [clientUser] = await db.select()
-          .from(users)
-          .where(eq(users.id, project.clientId))
-          .limit(1);
-
-        if (clientUser) {
-          this.sendToUser(clientUser.id, message);
+        const client = this.clients.get(project.clientId);
+        if (client?.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify(message));
         }
       }
 
-      // Send to assigned admin/staff
+      // Send to assigned staff
       if (project.assignedTo) {
-        this.sendToUser(project.assignedTo, message);
+        const staff = this.clients.get(project.assignedTo);
+        if (staff?.readyState === WebSocket.OPEN) {
+          staff.send(JSON.stringify(message));
+        }
       }
 
       // Also broadcast to all admins
