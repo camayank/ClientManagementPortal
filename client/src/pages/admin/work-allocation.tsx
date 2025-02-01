@@ -1,6 +1,6 @@
 import { AdminLayout } from "@/components/layouts/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { GanttChartSquare, Users, Calendar, Clock, AlertCircle } from "lucide-react";
+import { GanttChartSquare, Users, Calendar, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable } from "@/components/ui/data-table";
 import { Button } from "@/components/ui/button";
