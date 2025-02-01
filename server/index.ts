@@ -9,7 +9,7 @@ import helmet from "helmet";
 
 const app = express();
 
-// Basic security setup
+// Trust proxy must be set before rate limiter
 app.set('trust proxy', 1);
 
 // Request tracking middleware
@@ -52,6 +52,7 @@ if (app.get("env") === "development") {
       crossOriginEmbedderPolicy: false,
       crossOriginResourcePolicy: false,
       crossOriginOpenerPolicy: false,
+      xFrameOptions: false, // Allow iframes in development
     })
   );
 } else {
@@ -66,13 +67,13 @@ if (app.get("env") === "development") {
           styleSrc: ["'self'", "'unsafe-inline'"],
           imgSrc: ["'self'", "data:", "https:"],
           fontSrc: ["'self'", "https:", "data:"],
-          frameAncestors: ["'self'"],
+          frameAncestors: ["'none'"],
           formAction: ["'self'"],
         },
       },
-      crossOriginEmbedderPolicy: false,
-      crossOriginResourcePolicy: { policy: "cross-origin" },
-      crossOriginOpenerPolicy: false,
+      crossOriginEmbedderPolicy: true,
+      crossOriginResourcePolicy: { policy: "same-origin" },
+      crossOriginOpenerPolicy: { policy: "same-origin" },
     })
   );
 }

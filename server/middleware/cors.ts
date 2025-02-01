@@ -1,17 +1,22 @@
 import cors from "cors";
 import { type CorsOptions } from "cors";
 
+// Allow all origins in development, restricted in production
 const whitelist = [
   process.env.APP_URL,
   "http://localhost:5000",
   "http://127.0.0.1:5000",
   /^https:\/\/.*\.repl\.co$/,
-  /^https:\/\/.*\.replit\.dev$/,
+  /^https:\/\/.*\.replit\.dev$/
 ];
 
 const corsOptions: CorsOptions = {
   origin: (origin, callback) => {
-    // Allow server-to-server requests and requests from same origin
+    if (process.env.NODE_ENV === 'development') {
+      return callback(null, true);
+    }
+
+    // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) {
       return callback(null, true);
     }
