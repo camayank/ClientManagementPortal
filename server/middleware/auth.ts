@@ -3,6 +3,13 @@ import { AppError } from "./error-handler";
 import { rateLimit } from "express-rate-limit";
 import winston from "winston";
 
+// Extend Express.Session interface
+declare module 'express-session' {
+  interface SessionData {
+    lastActivity: Date;
+  }
+}
+
 // Setup logger
 const logger = winston.createLogger({
   level: 'info',
@@ -62,50 +69,6 @@ export const requireClient = (req: Request, _res: Response, next: NextFunction) 
     throw new AppError("Client access required", 403);
   }
   next();
-};
-
-// Enhanced permission checking middleware
-export const checkPermission = (resource: string, action: "read" | "write" | "delete") => {
-  return (req: Request, _res: Response, next: NextFunction) => {
-    const user = req.user;
-    if (!user) {
-      logger.warn(`Permission check failed - no user found. IP: ${req.ip}`);
-      throw new AppError("Not authenticated", 401);
-    }
-
-    // Admin has all permissions
-    if (user.role === "admin") {
-      logger.info(`Admin permission granted for ${resource}:${action}. User: ${user.id}`);
-      return next();
-    }
-
-    // Client permissions are restricted
-    if (user.role === "client") {
-      // Clients can only access their own data
-      const allowedResources = ["projects", "documents", "tasks", "messages"];
-      const allowedActions = {
-        projects: ["read", "write"],
-        documents: ["read", "write"],
-        tasks: ["read"],
-        messages: ["read", "write"],
-      };
-
-      if (!allowedResources.includes(resource)) {
-        logger.warn(`Client attempted to access forbidden resource. User: ${user.id}, Resource: ${resource}`);
-        throw new AppError("Resource access denied", 403);
-      }
-
-      const resourceActions = allowedActions[resource as keyof typeof allowedActions];
-      if (!resourceActions?.includes(action)) {
-        logger.warn(`Client attempted forbidden action. User: ${user.id}, Resource: ${resource}, Action: ${action}`);
-        throw new AppError("Action not allowed", 403);
-      }
-
-      logger.info(`Client permission granted for ${resource}:${action}. User: ${user.id}`);
-    }
-
-    next();
-  };
 };
 
 // Session timeout checker

@@ -31,7 +31,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: user, refetch } = useQuery<User>({
+  const { data: user = null, refetch } = useQuery<User | null>({
     queryKey: ['/api/auth/me'],
     retry: false,
     enabled: false,
@@ -179,7 +179,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       messages: ["read", "write"],
     };
 
-    return allowedActions[resource]?.includes(action) ?? false;
+    // Check both role-based permissions and specific user permissions
+    const hasRolePermission = allowedActions[resource]?.includes(action) ?? false;
+    const hasSpecificPermission = user.permissions?.includes(`${resource}:${action}`);
+
+    return hasRolePermission || !!hasSpecificPermission;
   };
 
   return (

@@ -7,9 +7,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Download, FileText, Eye } from "lucide-react";
+import { Download, FileText, Eye, History, Tag } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import type { Document } from "@db/schema";
+import type { Document, DocumentVersion, DocumentClassification } from "@db/schema";
 import { formatDistanceToNow } from "date-fns";
 import {
   Dialog,
@@ -17,6 +17,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -33,39 +40,103 @@ function formatFileSize(bytes: number) {
   return `${size.toFixed(1)} ${units[unitIndex]}`;
 }
 
+interface VersionHistoryProps {
+  documentId: number;
+  onClose: () => void;
+}
+
+function VersionHistory({ documentId, onClose }: VersionHistoryProps) {
+  const { data: versions } = useQuery<DocumentVersion[]>({
+    queryKey: [`/api/documents/${documentId}/versions`],
+  });
+
+  return (
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Version History</DialogTitle>
+        </DialogHeader>
+        <div className="mt-4">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Version</TableHead>
+                <TableHead>Size</TableHead>
+                <TableHead>Uploaded By</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {versions?.map((version) => (
+                <TableRow key={version.id}>
+                  <TableCell>v{version.version}</TableCell>
+                  <TableCell>{formatFileSize(version.size)}</TableCell>
+                  <TableCell>{version.uploadedBy}</TableCell>
+                  <TableCell>
+                    {formatDistanceToNow(new Date(version.createdAt), { addSuffix: true })}
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      asChild
+                    >
+                      <a
+                        href={`/api/documents/${documentId}/download/${version.version}`}
+                        download
+                      >
+                        <Download className="h-4 w-4" />
+                      </a>
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function DocumentList() {
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
+  const [showVersions, setShowVersions] = useState<number | null>(null);
   const { toast } = useToast();
 
-  const { data: documents, isLoading, error } = useQuery<Document[]>({
+  const { data: documents, isLoading } = useQuery<Document[]>({
     queryKey: ['/api/documents'],
   });
 
-  const handleDownload = async (docId: number) => {
+  const { data: classifications } = useQuery<DocumentClassification[]>({
+    queryKey: ['/api/documents/classifications'],
+  });
+
+  const handleClassify = async (documentId: number, classificationId: string) => {
     try {
-      const response = await fetch(`/api/documents/${docId}/download`, {
+      const response = await fetch(`/api/documents/${documentId}/classify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ classificationId: parseInt(classificationId) }),
         credentials: 'include',
       });
 
       if (!response.ok) {
-        throw new Error('Download failed');
+        throw new Error('Failed to classify document');
       }
 
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = documents?.find(d => d.id === docId)?.name || 'document';
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      toast({
+        title: "Success",
+        description: "Document classified successfully",
+      });
     } catch (error) {
-      console.error('Download error:', error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to download document"
+        description: "Failed to classify document",
       });
     }
   };
@@ -82,14 +153,6 @@ export function DocumentList() {
     );
   }
 
-  if (error) {
-    return (
-      <div className="text-red-500 p-4">
-        Error loading documents: {error.message}
-      </div>
-    );
-  }
-
   return (
     <>
       <div className="rounded-md border">
@@ -99,6 +162,7 @@ export function DocumentList() {
               <TableHead>Name</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Size</TableHead>
+              <TableHead>Classifications</TableHead>
               <TableHead>Uploaded</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
@@ -112,6 +176,36 @@ export function DocumentList() {
                 </TableCell>
                 <TableCell>{doc.type}</TableCell>
                 <TableCell>{formatFileSize(doc.size)}</TableCell>
+                <TableCell>
+                  <Select
+                    onValueChange={(value) => handleClassify(doc.id, value)}
+                  >
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Add classification" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {classifications?.map((classification) => (
+                        <SelectItem
+                          key={classification.id}
+                          value={classification.id.toString()}
+                        >
+                          {classification.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex gap-1 mt-1">
+                    {doc.tags?.map((tag) => (
+                      <span
+                        key={tag.id}
+                        className="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary"
+                      >
+                        <Tag className="h-3 w-3 mr-1" />
+                        {tag.classification.name}
+                      </span>
+                    ))}
+                  </div>
+                </TableCell>
                 <TableCell>
                   {doc.createdAt && formatDistanceToNow(new Date(doc.createdAt), { addSuffix: true })}
                 </TableCell>
@@ -127,9 +221,21 @@ export function DocumentList() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleDownload(doc.id)}
+                      onClick={() => setShowVersions(doc.id)}
                     >
-                      <Download className="h-4 w-4" />
+                      <History className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      asChild
+                    >
+                      <a
+                        href={`/api/documents/${doc.id}/download`}
+                        download
+                      >
+                        <Download className="h-4 w-4" />
+                      </a>
                     </Button>
                   </div>
                 </TableCell>
@@ -137,7 +243,10 @@ export function DocumentList() {
             ))}
             {(!documents || documents.length === 0) && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell
+                  colSpan={6}
+                  className="text-center text-muted-foreground"
+                >
                   No documents found
                 </TableCell>
               </TableRow>
@@ -145,6 +254,13 @@ export function DocumentList() {
           </TableBody>
         </Table>
       </div>
+
+      {showVersions && (
+        <VersionHistory
+          documentId={showVersions}
+          onClose={() => setShowVersions(null)}
+        />
+      )}
 
       <Dialog open={!!selectedDoc} onOpenChange={() => setSelectedDoc(null)}>
         <DialogContent className="max-w-4xl h-[80vh]">

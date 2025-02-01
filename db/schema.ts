@@ -131,6 +131,47 @@ export const documents = pgTable("documents", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Add new tables after the existing documents table
+export const documentVersions = pgTable("document_versions", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").references(() => documents.id).notNull(),
+  version: integer("version").notNull(),
+  filename: text("filename").notNull(),
+  contentHash: text("content_hash").notNull(),
+  size: integer("size").notNull(),
+  uploadedBy: integer("uploaded_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const documentClassifications = pgTable("document_classifications", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  autoClassifyRules: jsonb("auto_classify_rules"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const documentTags = pgTable("document_tags", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").references(() => documents.id).notNull(),
+  classificationId: integer("classification_id").references(() => documentClassifications.id).notNull(),
+  addedBy: integer("added_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const documentAuditLogs = pgTable("document_audit_logs", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").references(() => documents.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  action: text("action", {
+    enum: ["upload", "download", "view", "delete", "classify", "version"]
+  }).notNull(),
+  metadata: jsonb("metadata"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // New Milestone tables
 export const milestones = pgTable("milestones", {
   id: serial("id").primaryKey(),
@@ -495,8 +536,8 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   }),
 }));
 
-
-export const documentsRelations = relations(documents, ({ one }) => ({
+// Update document relations
+export const documentsRelations = relations(documents, ({ one, many }) => ({
   client: one(clients, {
     fields: [documents.clientId],
     references: [clients.id],
@@ -509,6 +550,9 @@ export const documentsRelations = relations(documents, ({ one }) => ({
     fields: [documents.uploadedBy],
     references: [users.id],
   }),
+  versions: many(documentVersions),
+  tags: many(documentTags),
+  auditLogs: many(documentAuditLogs),
 }));
 
 export const milestonesRelations = relations(milestones, ({ one, many }) => ({
@@ -657,6 +701,33 @@ export const serviceTierFeaturesRelations = relations(serviceTierFeatures, ({ on
   }),
 }));
 
+// Add relations for new tables
+export const documentVersionsRelations = relations(documentVersions, ({ one }) => ({
+  document: one(documents, {
+    fields: [documentVersions.documentId],
+    references: [documents.id],
+  }),
+  uploader: one(users, {
+    fields: [documentVersions.uploadedBy],
+    references: [users.id],
+  }),
+}));
+
+export const documentTagsRelations = relations(documentTags, ({ one }) => ({
+  document: one(documents, {
+    fields: [documentTags.documentId],
+    references: [documents.id],
+  }),
+  classification: one(documentClassifications, {
+    fields: [documentTags.classificationId],
+    references: [documentClassifications.id],
+  }),
+  addedBy: one(users, {
+    fields: [documentTags.addedBy],
+    references: [users.id],
+  }),
+}));
+
 // Schema validation
 export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
@@ -723,6 +794,15 @@ export const insertDashboardWidgetSchema = createInsertSchema(dashboardWidgets);
 export const selectDashboardWidgetSchema = createSelectSchema(dashboardWidgets);
 export const insertReportTemplateSchema = createInsertSchema(reportTemplates);
 export const selectReportTemplateSchema = createSelectSchema(reportTemplates);
+// Add schema validation
+export const insertDocumentVersionSchema = createInsertSchema(documentVersions);
+export const selectDocumentVersionSchema = createSelectSchema(documentVersions);
+export const insertDocumentClassificationSchema = createInsertSchema(documentClassifications);
+export const selectDocumentClassificationSchema = createSelectSchema(documentClassifications);
+export const insertDocumentTagSchema = createInsertSchema(documentTags);
+export const selectDocumentTagSchema = createSelectSchema(documentTags);
+export const insertDocumentAuditLogSchema = createInsertSchema(documentAuditLogs);
+export const selectDocumentAuditLogSchema = createSelectSchema(documentAuditLogs);
 
 // Add relations for analytics tables
 export const analyticsMetricsRelations = relations(analyticsMetrics, ({ many }) => ({
@@ -800,7 +880,6 @@ export type CustomPricingRule = typeof customPricingRules.$inferSelect;
 export type NewCustomPricingRule = typeof customPricingRules.$inferInsert;
 export type PackageChangeHistory = typeof packageChangeHistory.$inferSelect;
 export type NewPackageChangeHistory = typeof packageChangeHistory.$inferInsert;
-
 // Add types for task tables
 export type Task = typeof tasks.$inferSelect;
 export type InsertTask = typeof tasks.$inferInsert;
@@ -821,6 +900,15 @@ export type DashboardWidget = typeof dashboardWidgets.$inferSelect;
 export type NewDashboardWidget = typeof dashboardWidgets.$inferInsert;
 export type ReportTemplate = typeof reportTemplates.$inferSelect;
 export type NewReportTemplate = typeof reportTemplates.$inferInsert;
+// Add types
+export type DocumentVersion = typeof documentVersions.$inferSelect;
+export type NewDocumentVersion = typeof documentVersions.$inferInsert;
+export type DocumentClassification = typeof documentClassifications.$inferSelect;
+export type NewDocumentClassification = typeof documentClassifications.$inferInsert;
+export type DocumentTag = typeof documentTags.$inferSelect;
+export type NewDocumentTag = typeof documentTags.$inferInsert;
+export type DocumentAuditLog = typeof documentAuditLogs.$inferSelect;
+export type NewDocumentAuditLog = typeof documentAuditLogs.$inferInsert;
 
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
   category: one(taskCategories, {

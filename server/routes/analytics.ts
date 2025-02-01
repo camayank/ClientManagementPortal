@@ -91,16 +91,6 @@ router.get("/team-members",
     try {
       const { role, location } = req.query;
 
-      let query = db.select({
-        id: users.id,
-        name: users.fullName,
-        role: users.role,
-        workflowPosition: users.workflowPosition,
-        experienceLevel: users.experienceLevel,
-        location: users.location,
-      }).from(users);
-
-      // Base condition
       const conditions = [sql`${users.workflowPosition} != 'none'`];
 
       // Add role filter if specified
@@ -113,10 +103,17 @@ router.get("/team-members",
         conditions.push(sql`${users.location} = ${location}`);
       }
 
-      // Apply all conditions
-      query = query.where(and(...conditions));
-
-      const teamMembers = await query;
+      const teamMembers = await db.query.users.findMany({
+        where: and(...conditions),
+        columns: {
+          id: true,
+          fullName: true,
+          role: true,
+          workflowPosition: true,
+          experienceLevel: true,
+          location: true,
+        }
+      });
 
       // Calculate current workload for each team member
       const teamMembersWithLoad = await Promise.all(
@@ -149,9 +146,9 @@ router.get("/team-members",
 });
 
 // Analytics Metrics Routes
-router.get("/metrics", requireAuth, async (req, res) => {
+router.get("/metrics", requireAuth, async (_req, res) => {
   try {
-    const metrics = await db.select().from(analyticsMetrics);
+    const metrics = await db.query.analyticsMetrics.findMany();
     res.json(metrics);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch metrics" });
@@ -198,21 +195,20 @@ router.get("/data-points/:metricId", requireAuth, async (req, res) => {
     const { metricId } = req.params;
     const { start, end } = req.query;
 
-    let query = db.select()
-      .from(analyticsDataPoints)
-      .where(eq(analyticsDataPoints.metricId, parseInt(metricId)))
-      .orderBy(sql`${analyticsDataPoints.timestamp} DESC`);
+    let conditions = [eq(analyticsDataPoints.metricId, parseInt(metricId))];
 
     if (start && end) {
-        query = query.where(
-            and(
-                sql`${analyticsDataPoints.timestamp} >= ${start}`,
-                sql`${analyticsDataPoints.timestamp} <= ${end}`
-            )
-        );
+      conditions.push(
+        sql`${analyticsDataPoints.timestamp} >= ${start}`,
+        sql`${analyticsDataPoints.timestamp} <= ${end}`
+      );
     }
 
-    const dataPoints = await query;
+    const dataPoints = await db.query.analyticsDataPoints.findMany({
+      where: and(...conditions),
+      orderBy: (dataPoints) => [sql`${dataPoints.timestamp} DESC`],
+    });
+
     res.json(dataPoints);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch data points" });
@@ -222,9 +218,9 @@ router.get("/data-points/:metricId", requireAuth, async (req, res) => {
 // Dashboard Configuration Routes
 router.get("/dashboards", requireAuth, async (req, res) => {
   try {
-    const dashboards = await db.select()
-      .from(dashboardConfigs)
-      .where(eq(dashboardConfigs.userId, req.user!.id));
+    const dashboards = await db.query.dashboardConfigs.findMany({
+      where: eq(dashboardConfigs.userId, req.user!.id),
+    });
     res.json(dashboards);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch dashboards" });
@@ -272,9 +268,9 @@ router.post("/widgets", requireAuth, async (req, res) => {
 // Report Templates Routes
 router.get("/report-templates", requireAuth, async (req, res) => {
   try {
-    const templates = await db.select()
-      .from(reportTemplates)
-      .where(eq(reportTemplates.createdBy, req.user!.id));
+    const templates = await db.query.reportTemplates.findMany({
+      where: eq(reportTemplates.createdBy, req.user!.id),
+    });
     res.json(templates);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch report templates" });

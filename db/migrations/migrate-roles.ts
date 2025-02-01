@@ -35,31 +35,35 @@ const DEFAULT_PERMISSIONS = {
 export async function migrateRoles() {
   try {
     // 1. Get or create roles
-    let adminRole = await db.select().from(roles).where(eq(roles.name, 'admin')).limit(1);
-    let clientRole = await db.select().from(roles).where(eq(roles.name, 'client')).limit(1);
+    let adminRole = await db.query.roles.findFirst({
+      where: eq(roles.name, 'admin'),
+    });
 
-    if (adminRole.length === 0) {
-      [adminRole[0]] = await db.insert(roles)
+    let clientRole = await db.query.roles.findFirst({
+      where: eq(roles.name, 'client'),
+    });
+
+    if (!adminRole) {
+      [adminRole] = await db.insert(roles)
         .values({ name: 'admin', description: 'Administrator with full access' })
         .returning();
     }
 
-    if (clientRole.length === 0) {
-      [clientRole[0]] = await db.insert(roles)
+    if (!clientRole) {
+      [clientRole] = await db.insert(roles)
         .values({ name: 'client', description: 'Client user with limited access' })
         .returning();
     }
 
     // 2. Create permissions and link to roles
     for (const [roleName, perms] of Object.entries(DEFAULT_PERMISSIONS)) {
-      const roleId = roleName === 'admin' ? adminRole[0].id : clientRole[0].id;
+      const roleId = roleName === 'admin' ? adminRole.id : clientRole.id;
 
       for (const perm of perms) {
         // Check if permission exists
-        let [permission] = await db.select()
-          .from(permissions)
-          .where(eq(permissions.name, `${perm.resource}:${perm.action}`))
-          .limit(1);
+        let permission = await db.query.permissions.findFirst({
+          where: eq(permissions.name, `${perm.resource}:${perm.action}`),
+        });
 
         if (!permission) {
           [permission] = await db.insert(permissions)
@@ -73,11 +77,9 @@ export async function migrateRoles() {
         }
 
         // Check if role-permission link exists
-        const [existingLink] = await db.select()
-          .from(rolePermissions)
-          .where(eq(rolePermissions.roleId, roleId))
-          .where(eq(rolePermissions.permissionId, permission.id))
-          .limit(1);
+        const existingLink = await db.query.rolePermissions.findFirst({
+          where: (rp) => eq(rp.roleId, roleId) && eq(rp.permissionId, permission.id),
+        });
 
         if (!existingLink) {
           await db.insert(rolePermissions)
@@ -90,19 +92,18 @@ export async function migrateRoles() {
     }
 
     // 3. Ensure all users have appropriate roles
-    const existingUsers = await db.select().from(users);
+    const existingUsers = await db.query.users.findMany();
 
     for (const user of existingUsers) {
-      const [existingUserRole] = await db.select()
-        .from(userRoles)
-        .where(eq(userRoles.userId, user.id))
-        .limit(1);
+      const existingUserRole = await db.query.userRoles.findFirst({
+        where: eq(userRoles.userId, user.id),
+      });
 
       if (!existingUserRole) {
         await db.insert(userRoles)
           .values({
             userId: user.id,
-            roleId: user.role === 'admin' ? adminRole[0].id : clientRole[0].id,
+            roleId: user.role === 'admin' ? adminRole.id : clientRole.id,
           });
       }
     }

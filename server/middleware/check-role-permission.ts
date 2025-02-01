@@ -1,7 +1,7 @@
 import { type Request, type Response, type NextFunction } from "express";
 import { db } from "@db";
 import { roles, rolePermissions, permissions, userRoles } from "@db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 export async function checkRolePermission(
   req: Request,
@@ -41,7 +41,7 @@ export async function checkRolePermission(
       .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
       .where(
         and(
-          rolePermissions.roleId.in(roleIds),
+          inArray(rolePermissions.roleId, roleIds),
           eq(permissions.name, requiredPermission)
         )
       );
