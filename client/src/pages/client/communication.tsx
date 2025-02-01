@@ -1,8 +1,35 @@
 import { ClientLayout } from "@/components/layouts/ClientLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MessageSquare, Users, Clock, Bell } from "lucide-react";
+import { MessageSquare, Users, Clock, Bell, Loader2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
+
+interface CommunicationStats {
+  unreadMessages: number;
+  totalMessages: number;
+  availableTeamMembers: number;
+  averageResponseTime: number;
+  notifications: number;
+}
 
 export default function ClientCommunication() {
+  const { isLoading: isAuthLoading } = useAuth();
+
+  const { data: stats, isLoading: isStatsLoading } = useQuery<CommunicationStats>({
+    queryKey: ['/api/communication/stats'],
+    enabled: !isAuthLoading,
+  });
+
+  if (isAuthLoading || isStatsLoading) {
+    return (
+      <ClientLayout>
+        <div className="flex items-center justify-center min-h-screen">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </ClientLayout>
+    );
+  }
+
   return (
     <ClientLayout>
       <div className="space-y-6 p-6 pb-16">
@@ -22,9 +49,9 @@ export default function ClientCommunication() {
               <MessageSquare className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">15</div>
+              <div className="text-2xl font-bold">{stats?.totalMessages || 0}</div>
               <p className="text-xs text-muted-foreground mt-1">
-                5 unread
+                {stats?.unreadMessages || 0} unread
               </p>
             </CardContent>
           </Card>
@@ -35,7 +62,7 @@ export default function ClientCommunication() {
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">4</div>
+              <div className="text-2xl font-bold">{stats?.availableTeamMembers || 0}</div>
               <p className="text-xs text-muted-foreground mt-1">
                 Available to chat
               </p>
@@ -48,7 +75,7 @@ export default function ClientCommunication() {
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">10m</div>
+              <div className="text-2xl font-bold">{stats?.averageResponseTime || 0}m</div>
               <p className="text-xs text-muted-foreground mt-1">
                 Average
               </p>
@@ -61,7 +88,7 @@ export default function ClientCommunication() {
               <Bell className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">8</div>
+              <div className="text-2xl font-bold">{stats?.notifications || 0}</div>
               <p className="text-xs text-muted-foreground mt-1">
                 Last 24 hours
               </p>
@@ -69,7 +96,6 @@ export default function ClientCommunication() {
           </Card>
         </div>
 
-        {/* Future implementation: Communication center */}
         <Card className="mt-6">
           <CardHeader>
             <CardTitle>Communication Center</CardTitle>

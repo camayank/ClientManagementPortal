@@ -18,7 +18,7 @@ import { useForm } from "react-hook-form";
 import { useToast } from "@/hooks/use-toast";
 import type { Project, ProjectTemplate } from "@db/schema";
 import { Badge } from "@/components/ui/badge";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { 
   Select,
@@ -30,6 +30,7 @@ import {
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { addDays, format } from 'date-fns';
+import { useAuth } from "@/hooks/use-auth";
 
 const projectSchema = z.object({
   name: z.string().min(1, "Project name is required"),
@@ -57,8 +58,8 @@ const projectSchema = z.object({
     required_error: "Client type is required",
   }),
   priority: z.enum(["low", "medium", "high"]).default("medium"),
-  estimatedHours: z.string().transform(val => parseInt(val) || 0).optional(),
-  budget: z.string().transform(val => parseInt(val) || 0).optional(),
+  estimatedHours: z.number().optional(),
+  budget: z.number().optional(),
   lastDate: z.string().min(1, "End date is required"),
   initialMilestone: z.object({
     title: z.string().min(1, "Milestone title is required"),
@@ -74,6 +75,7 @@ export default function ClientProjects() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { isLoading: isAuthLoading } = useAuth();
 
   const form = useForm<NewProjectForm>({
     resolver: zodResolver(projectSchema),
@@ -83,24 +85,26 @@ export default function ClientProjects() {
       businessType: "bookkeeping",
       clientType: "individual",
       priority: "medium",
-      estimatedHours: "",
-      budget: "",
-      lastDate: format(addDays(new Date(), 30), 'yyyy-MM-dd'), // Default to 30 days from now
+      estimatedHours: 0,
+      budget: 0,
+      lastDate: format(addDays(new Date(), 30), 'yyyy-MM-dd'),
       initialMilestone: {
         title: "",
         description: "",
-        dueDate: format(addDays(new Date(), 7), 'yyyy-MM-dd'), // Default to 7 days from now
+        dueDate: format(addDays(new Date(), 7), 'yyyy-MM-dd'),
         priority: "medium",
       },
     },
   });
 
-  const { data: projects, isLoading } = useQuery<Project[]>({
+  const { data: projects, isLoading: isProjectsLoading } = useQuery<Project[]>({
     queryKey: ['/api/projects'],
+    enabled: !isAuthLoading,
   });
 
   const { data: templates } = useQuery<ProjectTemplate[]>({
     queryKey: ['/api/project-templates'],
+    enabled: !isAuthLoading,
   });
 
   const createProject = useMutation({
@@ -137,14 +141,13 @@ export default function ClientProjects() {
   });
 
   const handleTemplateChange = (templateId: string) => {
-    if (!templateId) {
+    if (!templateId || !templates) {
       form.reset();
       return;
     }
 
-    const template = templates?.find(t => t.id === parseInt(templateId));
+    const template = templates.find(t => t.id === parseInt(templateId));
     if (template) {
-      // Calculate relative dates for milestones
       const firstMilestone = template.defaultMilestones?.[0];
       if (firstMilestone) {
         const dueDate = firstMilestone.dueDate.startsWith('relative:') 
@@ -157,9 +160,9 @@ export default function ClientProjects() {
           businessType: template.businessType,
           clientType: template.clientType,
           priority: template.priority || 'medium',
-          estimatedHours: template.estimatedHours?.toString() || '',
-          budget: template.budget?.toString() || '',
-          lastDate: format(addDays(new Date(), 60), 'yyyy-MM-dd'), // Default to 60 days
+          estimatedHours: template.estimatedHours || 0,
+          budget: template.budget || 0,
+          lastDate: format(addDays(new Date(), 60), 'yyyy-MM-dd'),
           initialMilestone: {
             title: firstMilestone.title,
             description: firstMilestone.description || '',
@@ -174,6 +177,16 @@ export default function ClientProjects() {
   const onSubmit = (data: NewProjectForm) => {
     createProject.mutate(data);
   };
+
+  if (isAuthLoading) {
+    return (
+      <ClientLayout>
+        <div className="flex items-center justify-center min-h-screen">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </ClientLayout>
+    );
+  }
 
   return (
     <ClientLayout>
@@ -299,7 +312,7 @@ export default function ClientProjects() {
                       <Input 
                         id="estimatedHours"
                         type="number"
-                        {...form.register("estimatedHours")}
+                        {...form.register("estimatedHours", { valueAsNumber: true })}
                       />
                     </div>
 
@@ -308,7 +321,7 @@ export default function ClientProjects() {
                       <Input 
                         id="budget"
                         type="number"
-                        {...form.register("budget")}
+                        {...form.register("budget", { valueAsNumber: true })}
                       />
                     </div>
 
@@ -396,8 +409,10 @@ export default function ClientProjects() {
           </Dialog>
         </div>
 
-        {isLoading ? (
-          <div>Loading...</div>
+        {isProjectsLoading ? (
+          <div className="flex items-center justify-center h-48">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-3">
             {projects?.map((project) => (
@@ -411,8 +426,8 @@ export default function ClientProjects() {
                       </Badge>
                     </div>
                     <div className="space-y-1 text-sm text-muted-foreground">
-                      <div>Created On: {new Date(project.createdAt || '').toLocaleDateString()}</div>
-                      <div>Last Date: {new Date(project.lastDate).toLocaleDateString()}</div>
+                      <div>Created: {project.createdAt ? format(new Date(project.createdAt), 'MMM d, yyyy') : 'N/A'}</div>
+                      <div>Due: {format(new Date(project.lastDate), 'MMM d, yyyy')}</div>
                       <div>Assigned to: {project.assignedTo || 'Unassigned'}</div>
                       {project.description && (
                         <div className="mt-2">

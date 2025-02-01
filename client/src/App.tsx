@@ -2,7 +2,7 @@ import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
-import { useUser } from "@/hooks/use-user";
+import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
 import { ErrorBoundary } from "@/hooks/use-error-boundary";
 import NotFound from "@/pages/not-found";
@@ -14,7 +14,6 @@ import AdminClients from "@/pages/admin/clients";
 import AdminDocuments from "@/pages/admin/documents";
 import AdminCredentials from "@/pages/admin/credentials";
 import AdminReports from "@/pages/admin/reports";
-import RoleManagement from "@/pages/role-management";
 import UserRoleManagement from "@/pages/admin/user-roles";
 import ClientOnboarding from "@/pages/admin/client-onboarding";
 import ServicePackages from "@/pages/admin/service-packages";
@@ -41,7 +40,15 @@ interface ProtectedRouteProps {
 }
 
 function ProtectedRoute({ component: Component, isAdmin: requireAdmin }: ProtectedRouteProps) {
-  const { user, isAdmin } = useUser();
+  const { user, isAdmin, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   if (!user || (requireAdmin && !isAdmin) || (!requireAdmin && isAdmin)) {
     return <Redirect to="/" />;
@@ -51,7 +58,7 @@ function ProtectedRoute({ component: Component, isAdmin: requireAdmin }: Protect
 }
 
 function Router() {
-  const { user, isLoading, isAdmin } = useUser();
+  const { user, isLoading, isAdmin } = useAuth();
 
   if (isLoading) {
     return (
@@ -76,7 +83,6 @@ function Router() {
           <Route path="/admin/documents" component={() => <ProtectedRoute component={AdminDocuments} isAdmin={true} />} />
           <Route path="/admin/credentials" component={() => <ProtectedRoute component={AdminCredentials} isAdmin={true} />} />
           <Route path="/admin/reports" component={() => <ProtectedRoute component={AdminReports} isAdmin={true} />} />
-          <Route path="/admin/roles" component={() => <ProtectedRoute component={RoleManagement} isAdmin={true} />} />
           <Route path="/admin/user-roles" component={() => <ProtectedRoute component={UserRoleManagement} isAdmin={true} />} />
           <Route path="/admin/tasks" component={() => <ProtectedRoute component={TasksPage} isAdmin={true} />} />
           <Route path="/admin/work-allocation" component={() => <ProtectedRoute component={WorkAllocation} isAdmin={true} />} />
@@ -110,8 +116,10 @@ function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <Router />
-        <Toaster />
+        <AuthProvider>
+          <Router />
+          <Toaster />
+        </AuthProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );
