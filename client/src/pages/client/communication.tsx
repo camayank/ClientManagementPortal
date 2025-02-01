@@ -1,8 +1,13 @@
 import { ClientLayout } from "@/components/layouts/ClientLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MessageSquare, Users, Clock, Bell, Loader2 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { MessageSquare, Users, Clock, Bell, Loader2, Send } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { useEffect, useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useWebSocket } from "@/hooks/use-websocket";
 
 interface CommunicationStats {
   unreadMessages: number;
@@ -12,13 +17,71 @@ interface CommunicationStats {
   notifications: number;
 }
 
+interface Message {
+  id: string;
+  content: string;
+  senderId: string;
+  timestamp: string;
+  isRead: boolean;
+}
+
 export default function ClientCommunication() {
-  const { isLoading: isAuthLoading } = useAuth();
+  const { isLoading: isAuthLoading, user } = useAuth();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState("");
+  const socket = useWebSocket();
 
   const { data: stats, isLoading: isStatsLoading } = useQuery<CommunicationStats>({
     queryKey: ['/api/communication/stats'],
-    enabled: !isAuthLoading,
+    enabled: !isAuthLoading && !!user,
   });
+
+  const { data: initialMessages, isLoading: isMessagesLoading } = useQuery<Message[]>({
+    queryKey: ['/api/communication/messages'],
+    enabled: !isAuthLoading && !!user,
+  });
+
+  const sendMessage = useMutation({
+    mutationFn: async (content: string) => {
+      const response = await fetch('/api/communication/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+        credentials: 'include'
+      });
+      if (!response.ok) throw new Error('Failed to send message');
+      return response.json();
+    },
+    onSuccess: (newMsg) => {
+      setMessages(prev => [...prev, newMsg]);
+      socket?.emit('new_message', newMsg);
+    },
+  });
+
+  useEffect(() => {
+    if (initialMessages) {
+      setMessages(initialMessages);
+    }
+  }, [initialMessages]);
+
+  useEffect(() => {
+    if (socket) {
+      const cleanup = socket.on('message', (msg: Message) => {
+        setMessages(prev => [...prev, msg]);
+      });
+
+      return () => {
+        cleanup();
+      };
+    }
+  }, [socket]);
+
+  const handleSend = () => {
+    if (newMessage.trim()) {
+      sendMessage.mutate(newMessage);
+      setNewMessage("");
+    }
+  };
 
   if (isAuthLoading || isStatsLoading) {
     return (
@@ -98,19 +161,55 @@ export default function ClientCommunication() {
 
         <Card className="mt-6">
           <CardHeader>
-            <CardTitle>Communication Center</CardTitle>
+            <CardTitle>Messages</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-muted-foreground">
-              Communication features will be implemented here, including:
-            </p>
-            <ul className="list-disc list-inside mt-2 space-y-1 text-muted-foreground">
-              <li>Real-time messaging</li>
-              <li>File sharing</li>
-              <li>Video conferencing</li>
-              <li>Team collaboration tools</li>
-              <li>Message history and search</li>
-            </ul>
+            <div className="flex flex-col h-[400px]">
+              <ScrollArea className="flex-grow mb-4">
+                <div className="space-y-4">
+                  {isMessagesLoading ? (
+                    <div className="flex justify-center">
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    </div>
+                  ) : messages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col ${
+                        msg.senderId === user?.id ? 'items-end' : 'items-start'
+                      }`}
+                    >
+                      <div
+                        className={`max-w-[80%] rounded-lg p-3 ${
+                          msg.senderId === user?.id
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted'
+                        }`}
+                      >
+                        <p>{msg.content}</p>
+                        <span className="text-xs opacity-70">
+                          {new Date(msg.timestamp).toLocaleTimeString()}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+              <div className="flex gap-2">
+                <Input
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  placeholder="Type your message..."
+                  onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+                />
+                <Button onClick={handleSend} disabled={sendMessage.isPending}>
+                  {sendMessage.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
