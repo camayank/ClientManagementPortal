@@ -6,13 +6,17 @@ import {
   dashboardConfigs,
   dashboardWidgets,
   reportTemplates,
+  users,
+  tasks,
+  projects,
   insertAnalyticsMetricSchema,
   insertAnalyticsDataPointSchema,
   insertDashboardConfigSchema,
   insertDashboardWidgetSchema,
   insertReportTemplateSchema
 } from "@db/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, count } from "drizzle-orm";
+import { requirePermission } from "../middleware/check-permission";
 
 const router = Router();
 
@@ -23,6 +27,130 @@ const requireAuth = (req: any, res: any, next: any) => {
   }
   next();
 };
+
+// Workload Metrics API
+router.get("/workload-metrics", 
+  requireAuth,
+  requirePermission('analytics', 'read'),
+  async (req, res) => {
+    try {
+      const now = new Date();
+      const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+      // Get active assignments count
+      const activeAssignments = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(tasks)
+        .where(eq(tasks.status, "in_progress"))
+        .then(result => result[0].count);
+
+      // Get tasks due this week
+      const dueThisWeek = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(tasks)
+        .where(and(
+          sql`${tasks.dueDate} >= ${now}`,
+          sql`${tasks.dueDate} <= ${nextWeek}`
+        ))
+        .then(result => result[0].count);
+
+      // Get available team members
+      const availableTeamMembers = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(users)
+        .where(sql`${users.workflowPosition} != 'none'`)
+        .then(result => result[0].count);
+
+      // Get scheduled tasks
+      const scheduledTasks = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(tasks)
+        .where(eq(tasks.status, "todo"))
+        .then(result => result[0].count);
+
+      // Get urgent tasks
+      const urgentTasks = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(tasks)
+        .where(and(
+          eq(tasks.priority, "urgent"),
+          sql`${tasks.status} != 'completed'`
+        ))
+        .then(result => result[0].count);
+
+      res.json({
+        activeAssignments,
+        dueThisWeek,
+        availableTeamMembers,
+        scheduledTasks,
+        urgentTasks
+      });
+    } catch (error) {
+      console.error("Error fetching workload metrics:", error);
+      res.status(500).json({ error: "Failed to fetch workload metrics" });
+    }
+});
+
+// Team Members Workload API
+router.get("/team-members",
+  requireAuth,
+  requirePermission('analytics', 'read'),
+  async (req, res) => {
+    try {
+      const { role, location } = req.query;
+
+      let query = db
+        .select({
+          id: users.id,
+          name: users.fullName,
+          role: users.role,
+          workflowPosition: users.workflowPosition,
+          experienceLevel: users.experienceLevel,
+          location: users.location,
+        })
+        .from(users)
+        .where(sql`${users.workflowPosition} != 'none'`);
+
+      if (role && role !== 'all') {
+        query = query.where(eq(users.role, role as string));
+      }
+
+      if (location && location !== 'all') {
+        query = query.where(eq(users.location, location as string));
+      }
+
+      const teamMembers = await query;
+
+      // Calculate current workload for each team member
+      const teamMembersWithLoad = await Promise.all(
+        teamMembers.map(async (member) => {
+          const assignedTasks = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(tasks)
+            .where(and(
+              eq(tasks.assignedTo, member.id),
+              sql`${tasks.status} != 'completed'`
+            ))
+            .then(result => result[0].count);
+
+          // Calculate workload percentage (assuming max capacity is 10 tasks)
+          const currentLoad = Math.min((assignedTasks / 10) * 100, 100);
+          const availableHours = 40 - (assignedTasks * 4); // Assuming 4 hours per task
+
+          return {
+            ...member,
+            currentLoad,
+            availableHours: Math.max(availableHours, 0)
+          };
+        })
+      );
+
+      res.json(teamMembersWithLoad);
+    } catch (error) {
+      console.error("Error fetching team members:", error);
+      res.status(500).json({ error: "Failed to fetch team members" });
+    }
+});
 
 // Analytics Metrics Routes
 router.get("/metrics", requireAuth, async (req, res) => {
