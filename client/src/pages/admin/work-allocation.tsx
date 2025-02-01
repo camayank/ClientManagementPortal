@@ -17,15 +17,15 @@ import { Progress } from "@/components/ui/progress";
 import { Tooltip } from "@/components/ui/tooltip";
 
 // Types for our work allocation system
-type WorkloadMetrics = {
+interface WorkloadMetrics {
   activeAssignments: number;
   dueThisWeek: number;
   availableTeamMembers: number;
   scheduledTasks: number;
   urgentTasks: number;
-};
+}
 
-type TeamMember = {
+interface TeamMember {
   id: number;
   name: string;
   role: string;
@@ -34,7 +34,15 @@ type TeamMember = {
   location: string;
   currentLoad: number;
   availableHours: number;
-};
+}
+
+interface TableColumn {
+  accessorKey: keyof TeamMember | 'actions';
+  header: string;
+  cell?: (props: { row: { original: TeamMember } }) => React.ReactNode;
+  sortable?: boolean;
+  searchable?: boolean;
+}
 
 export default function WorkAllocation() {
   const [filterRole, setFilterRole] = useState<string>("all");
@@ -60,46 +68,46 @@ export default function WorkAllocation() {
     }
   });
 
-  const columns = [
+  const columns: TableColumn[] = [
     {
-      accessorKey: "name" as keyof TeamMember,
+      accessorKey: "name",
       header: "Name",
       sortable: true,
       searchable: true,
     },
     {
-      accessorKey: "role" as keyof TeamMember,
+      accessorKey: "role",
       header: "Role",
       sortable: true,
-      cell: ({ row }: { row: { original: TeamMember } }) => (
+      cell: ({ row }) => (
         <Badge variant={getBadgeVariant(row.original.role)}>{row.original.role}</Badge>
       ),
     },
     {
-      accessorKey: "workflowPosition" as keyof TeamMember,
+      accessorKey: "workflowPosition",
       header: "Workflow Position",
       sortable: true,
-      cell: ({ row }: { row: { original: TeamMember } }) => (
+      cell: ({ row }) => (
         <Badge variant="outline" className="capitalize">
           {row.original.workflowPosition}
         </Badge>
       ),
     },
     {
-      accessorKey: "experienceLevel" as keyof TeamMember,
+      accessorKey: "experienceLevel",
       header: "Experience",
       sortable: true,
     },
     {
-      accessorKey: "location" as keyof TeamMember,
+      accessorKey: "location",
       header: "Location",
       sortable: true,
     },
     {
-      accessorKey: "currentLoad" as keyof TeamMember,
+      accessorKey: "currentLoad",
       header: "Workload",
       sortable: true,
-      cell: ({ row }: { row: { original: TeamMember } }) => (
+      cell: ({ row }) => (
         <Tooltip content={`${row.original.availableHours}h available this week`}>
           <div className="w-full space-y-1">
             <Progress value={row.original.currentLoad} className="h-2" />
@@ -113,7 +121,7 @@ export default function WorkAllocation() {
     {
       accessorKey: "actions",
       header: "Actions",
-      cell: ({ row }: { row: { original: TeamMember } }) => (
+      cell: ({ row }) => (
         <div className="flex gap-2">
           <Button 
             variant="outline" 

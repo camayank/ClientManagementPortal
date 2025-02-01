@@ -15,13 +15,15 @@ import {
   insertDashboardWidgetSchema,
   insertReportTemplateSchema
 } from "@db/schema";
-import { eq, and, desc, sql, count } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { requirePermission } from "../middleware/check-permission";
+import { AppError } from "../middleware/error-handler";
+import type { Request, Response, NextFunction } from "express";
 
 const router = Router();
 
 // Middleware to check if user is authenticated
-const requireAuth = (req: any, res: any, next: any) => {
+const requireAuth = (req: Request, res: Response, next: NextFunction) => {
   if (!req.isAuthenticated()) {
     return res.status(401).json({ error: "Not authenticated" });
   }
@@ -32,62 +34,52 @@ const requireAuth = (req: any, res: any, next: any) => {
 router.get("/workload-metrics", 
   requireAuth,
   requirePermission('analytics', 'read'),
-  async (req, res) => {
+  async (_req: Request, res: Response) => {
     try {
       const now = new Date();
       const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-      // Get active assignments count
-      const activeAssignments = await db
-        .select({ count: sql<number>`count(*)` })
+      const [activeAssignments] = await db
+        .select({ count: sql<number>`count(*)::int` })
         .from(tasks)
-        .where(eq(tasks.status, "in_progress"))
-        .then(result => result[0].count);
+        .where(eq(tasks.status, "in_progress"));
 
-      // Get tasks due this week
-      const dueThisWeek = await db
-        .select({ count: sql<number>`count(*)` })
+      const [dueThisWeek] = await db
+        .select({ count: sql<number>`count(*)::int` })
         .from(tasks)
         .where(and(
           sql`${tasks.dueDate} >= ${now}`,
           sql`${tasks.dueDate} <= ${nextWeek}`
-        ))
-        .then(result => result[0].count);
+        ));
 
-      // Get available team members
-      const availableTeamMembers = await db
-        .select({ count: sql<number>`count(*)` })
+      const [availableTeamMembers] = await db
+        .select({ count: sql<number>`count(*)::int` })
         .from(users)
-        .where(sql`${users.workflowPosition} != 'none'`)
-        .then(result => result[0].count);
+        .where(sql`${users.workflowPosition} != 'none'`);
 
-      // Get scheduled tasks
-      const scheduledTasks = await db
-        .select({ count: sql<number>`count(*)` })
+      const [scheduledTasks] = await db
+        .select({ count: sql<number>`count(*)::int` })
         .from(tasks)
-        .where(eq(tasks.status, "todo"))
-        .then(result => result[0].count);
+        .where(eq(tasks.status, "todo"));
 
-      // Get urgent tasks
-      const urgentTasks = await db
-        .select({ count: sql<number>`count(*)` })
+      const [urgentTasks] = await db
+        .select({ count: sql<number>`count(*)::int` })
         .from(tasks)
         .where(and(
           eq(tasks.priority, "urgent"),
           sql`${tasks.status} != 'completed'`
-        ))
-        .then(result => result[0].count);
+        ));
 
       res.json({
-        activeAssignments,
-        dueThisWeek,
-        availableTeamMembers,
-        scheduledTasks,
-        urgentTasks
+        activeAssignments: activeAssignments.count,
+        dueThisWeek: dueThisWeek.count,
+        availableTeamMembers: availableTeamMembers.count,
+        scheduledTasks: scheduledTasks.count,
+        urgentTasks: urgentTasks.count
       });
     } catch (error) {
       console.error("Error fetching workload metrics:", error);
-      res.status(500).json({ error: "Failed to fetch workload metrics" });
+      throw new AppError("Failed to fetch workload metrics", 500);
     }
 });
 
@@ -95,47 +87,51 @@ router.get("/workload-metrics",
 router.get("/team-members",
   requireAuth,
   requirePermission('analytics', 'read'),
-  async (req, res) => {
+  async (req: Request, res: Response) => {
     try {
       const { role, location } = req.query;
 
-      let query = db
-        .select({
-          id: users.id,
-          name: users.fullName,
-          role: users.role,
-          workflowPosition: users.workflowPosition,
-          experienceLevel: users.experienceLevel,
-          location: users.location,
-        })
-        .from(users)
-        .where(sql`${users.workflowPosition} != 'none'`);
+      let query = db.select({
+        id: users.id,
+        name: users.fullName,
+        role: users.role,
+        workflowPosition: users.workflowPosition,
+        experienceLevel: users.experienceLevel,
+        location: users.location,
+      }).from(users);
 
+      // Base condition
+      const conditions = [sql`${users.workflowPosition} != 'none'`];
+
+      // Add role filter if specified
       if (role && role !== 'all') {
-        query = query.where(eq(users.role, role as string));
+        conditions.push(sql`${users.role} = ${role}`);
       }
 
+      // Add location filter if specified
       if (location && location !== 'all') {
-        query = query.where(eq(users.location, location as string));
+        conditions.push(sql`${users.location} = ${location}`);
       }
+
+      // Apply all conditions
+      query = query.where(and(...conditions));
 
       const teamMembers = await query;
 
       // Calculate current workload for each team member
       const teamMembersWithLoad = await Promise.all(
         teamMembers.map(async (member) => {
-          const assignedTasks = await db
-            .select({ count: sql<number>`count(*)` })
+          const [assignedTasks] = await db
+            .select({ count: sql<number>`count(*)::int` })
             .from(tasks)
             .where(and(
               eq(tasks.assignedTo, member.id),
               sql`${tasks.status} != 'completed'`
-            ))
-            .then(result => result[0].count);
+            ));
 
           // Calculate workload percentage (assuming max capacity is 10 tasks)
-          const currentLoad = Math.min((assignedTasks / 10) * 100, 100);
-          const availableHours = 40 - (assignedTasks * 4); // Assuming 4 hours per task
+          const currentLoad = Math.min((assignedTasks.count / 10) * 100, 100);
+          const availableHours = 40 - (assignedTasks.count * 4); // Assuming 4 hours per task
 
           return {
             ...member,
@@ -148,7 +144,7 @@ router.get("/team-members",
       res.json(teamMembersWithLoad);
     } catch (error) {
       console.error("Error fetching team members:", error);
-      res.status(500).json({ error: "Failed to fetch team members" });
+      throw new AppError("Failed to fetch team members", 500);
     }
 });
 
@@ -205,15 +201,15 @@ router.get("/data-points/:metricId", requireAuth, async (req, res) => {
     let query = db.select()
       .from(analyticsDataPoints)
       .where(eq(analyticsDataPoints.metricId, parseInt(metricId)))
-      .orderBy(desc(analyticsDataPoints.timestamp));
+      .orderBy(sql`${analyticsDataPoints.timestamp} DESC`);
 
     if (start && end) {
-      query = query.where(
-        and(
-          sql`${analyticsDataPoints.timestamp} >= ${start}`,
-          sql`${analyticsDataPoints.timestamp} <= ${end}`
-        )
-      );
+        query = query.where(
+            and(
+                sql`${analyticsDataPoints.timestamp} >= ${start}`,
+                sql`${analyticsDataPoints.timestamp} <= ${end}`
+            )
+        );
     }
 
     const dataPoints = await query;
