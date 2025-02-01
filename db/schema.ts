@@ -198,19 +198,20 @@ export const milestoneUpdates = pgTable("milestone_updates", {
 });
 
 // New tables for client management
+// Update the servicePackages table definition with explicit types
 export const servicePackages = pgTable("service_packages", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
   tierId: integer("tier_id").references(() => serviceFeatureTiers.id),
-  features: jsonb("features"),
+  features: jsonb("features").$type<Record<string, unknown>>(),
   basePrice: numeric("base_price"),
   billingCycle: text("billing_cycle", { enum: ["monthly", "quarterly", "annual"] }).notNull(),
   isActive: boolean("is_active").default(true),
   sortOrder: integer("sort_order").default(0),
   upgradeToPackageId: integer("upgrade_to_package_id").references(() => servicePackages.id),
-  customizationRules: jsonb("customization_rules"), // Rules for price adjustments
-  comparisonData: jsonb("comparison_data"), // Metadata for package comparison
+  customizationRules: jsonb("customization_rules").$type<Record<string, unknown>>(),
+  comparisonData: jsonb("comparison_data").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at"),
 });
@@ -411,7 +412,7 @@ export const customPricingRules = pgTable("custom_pricing_rules", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Task Management System
+// Fix type annotations and circular references for tasks table
 export const taskCategories = pgTable("task_categories", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -435,6 +436,7 @@ export const taskCategories = pgTable("task_categories", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Remove circular references in tasks
 export const tasks = pgTable("tasks", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
@@ -474,6 +476,7 @@ export const tasks = pgTable("tasks", {
   completedAt: timestamp("completed_at"),
 });
 
+// Fix task dependencies schema
 export const taskDependencies = pgTable("task_dependencies", {
   id: serial("id").primaryKey(),
   taskId: integer("task_id").references(() => tasks.id).notNull(),
@@ -481,6 +484,7 @@ export const taskDependencies = pgTable("task_dependencies", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Fix task status history schema
 export const taskStatusHistory = pgTable("task_status_history", {
   id: serial("id").primaryKey(),
   taskId: integer("task_id").references(() => tasks.id).notNull(),
@@ -530,7 +534,7 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   }),
   documents: many(documents),
   milestones: many(milestones),
-  template: one(projectTemplates, {
+    template: one(projectTemplates, {
     fields: [projects.id],
     references: [projectTemplates.id],
   }),
@@ -613,6 +617,7 @@ export const projectTemplatesRelations = relations(projectTemplates, ({ many }) 
   projects: many(projects),
 }));
 
+// Fix return types in relations
 export const servicePackagesRelations = relations(servicePackages, ({ one, many }) => ({
   tier: one(serviceFeatureTiers, {
     fields: [servicePackages.tierId],
@@ -637,7 +642,7 @@ export const clientOnboardingRelations = relations(clientOnboarding, ({ one, man
     references: [users.id],
   }),
   communications: many(clientCommunications),
-    documents: many(clientOnboardingDocuments),
+  documents: many(clientOnboardingDocuments),
 }));
 
 export const clientEngagementRelations = relations(clientEngagement, ({ one }) => ({
@@ -683,7 +688,7 @@ export const clientOnboardingDocumentsRelations = relations(clientOnboardingDocu
 
 export const serviceFeatureTiersRelations = relations(serviceFeatureTiers, ({ many }) => ({
   features: many(serviceTierFeatures),
-  packages: many(servicePackages),
+    packages: many(servicePackages),
 }));
 
 export const serviceFeaturesRelations = relations(serviceFeatures, ({ many }) => ({
@@ -722,7 +727,7 @@ export const documentTagsRelations = relations(documentTags, ({ one }) => ({
     fields: [documentTags.classificationId],
     references: [documentClassifications.id],
   }),
-  addedBy: one(users, {
+    addedBy: one(users, {
     fields: [documentTags.addedBy],
     references: [users.id],
   }),
@@ -773,7 +778,7 @@ export const selectCustomPricingRuleSchema = createSelectSchema(customPricingRul
 export const insertPackageChangeHistorySchema = createInsertSchema(packageChangeHistory);
 export const selectPackageChangeHistorySchema = createSelectSchema(packageChangeHistory);
 
-// Add schema validation for task tables
+// Fix the typo in schema validation exports
 export const insertTaskSchema = createInsertSchema(tasks);
 export const selectTaskSchema = createSelectSchema(tasks);
 export const insertTaskCategorySchema = createInsertSchema(taskCategories);
@@ -910,6 +915,7 @@ export type NewDocumentTag = typeof documentTags.$inferInsert;
 export type DocumentAuditLog = typeof documentAuditLogs.$inferSelect;
 export type NewDocumentAuditLog = typeof documentAuditLogs.$inferInsert;
 
+// Fix return types in relations
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
   category: one(taskCategories, {
     fields: [tasks.categoryId],
@@ -921,6 +927,10 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
   }),
   reviewer: one(users, {
     fields: [tasks.reviewerId],
+    references: [users.id],
+  }),
+   creator: one(users, {
+    fields: [tasks.createdBy],
     references: [users.id],
   }),
   client: one(clients, {
@@ -935,8 +945,8 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
     fields: [tasks.parentTaskId],
     references: [tasks.id],
   }),
-  dependencies: many(taskDependencies, { relationName: "taskDependencies" }),
-  dependents: many(taskDependencies, { relationName: "dependentTasks" }),
+    subtasks: many(tasks, { relationName: "parentTask" }),
+  dependencies: many(taskDependencies, { relationName: "dependentTask" }),
   statusHistory: many(taskStatusHistory),
 }));
 
@@ -948,12 +958,12 @@ export const taskDependenciesRelations = relations(taskDependencies, ({ one }) =
   task: one(tasks, {
     fields: [taskDependencies.taskId],
     references: [tasks.id],
-    relationName: "taskDependencies",
+    relationName: "dependentTask",
   }),
   dependsOn: one(tasks, {
     fields: [taskDependencies.dependsOnTaskId],
     references: [tasks.id],
-    relationName: "dependentTasks",
+    relationName: "prerequisiteTask",
   }),
 }));
 
@@ -962,7 +972,7 @@ export const taskStatusHistoryRelations = relations(taskStatusHistory, ({ one })
     fields: [taskStatusHistory.taskId],
     references: [tasks.id],
   }),
-  user: one(users, {
+    user: one(users, {
     fields: [taskStatusHistory.changedBy],
     references: [users.id],
   }),
