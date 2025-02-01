@@ -28,7 +28,7 @@ const requireAuth = (req: any, res: any, next: any) => {
   next();
 };
 
-// Workload Metrics API
+// Update workload metrics endpoint to match frontend requirements
 router.get("/workload-metrics", 
   requireAuth,
   requirePermission('analytics', 'read'),
@@ -91,7 +91,7 @@ router.get("/workload-metrics",
     }
 });
 
-// Team Members Workload API
+// Update team members endpoint to include workload calculation
 router.get("/team-members",
   requireAuth,
   requirePermission('analytics', 'read'),
