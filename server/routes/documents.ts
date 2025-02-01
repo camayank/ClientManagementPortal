@@ -4,7 +4,7 @@ import { documentLimiter } from "../middleware/rate-limit";
 import multer from "multer";
 import path from "path";
 import crypto from "crypto";
-import { db } from "../db";
+import { db } from "../db/index";
 import { 
   documents, 
   documentVersions, 
