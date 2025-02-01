@@ -3,7 +3,7 @@ import { Strategy as LocalStrategy } from "passport-local";
 import { type Express } from "express";
 import session from "express-session";
 import createMemoryStore from "memorystore";
-import { users, roles, userRoles, type User } from "@db/schema";
+import { users, roles, userRoles } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -29,10 +29,19 @@ const passwordResetSchema = z.object({
   newPassword: z.string().min(6)
 });
 
-// Define a type that extends the base User type from schema
-type AuthUser = Omit<User, 'password'> & {
+// Define the AuthUser type properly
+interface AuthUser {
+  id: number;
+  username: string;
+  role: string;
+  email?: string;
   roles?: string[];
-};
+  fullName?: string;
+  location?: string;
+  experienceLevel?: string;
+  workflowPosition?: string;
+  lastLogin?: Date;
+}
 
 declare global {
   namespace Express {
@@ -86,7 +95,6 @@ export function setupAuth(app: Express) {
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
-        console.log("Attempting login for username:", username);
         const [user] = await db
           .select()
           .from(users)
@@ -94,14 +102,10 @@ export function setupAuth(app: Express) {
           .limit(1);
 
         if (!user) {
-          console.log("User not found");
           return done(null, false, { message: "Incorrect username." });
         }
 
-        console.log("Found user:", { ...user, password: '[REDACTED]' });
-
         const isValidPassword = await comparePassword(password, user.password);
-        console.log("Password validation result:", isValidPassword);
 
         if (!isValidPassword) {
           return done(null, false, { message: "Incorrect password." });
@@ -116,12 +120,17 @@ export function setupAuth(app: Express) {
           .innerJoin(roles, eq(userRoles.roleId, roles.id))
           .where(eq(userRoles.userId, user.id));
 
-        console.log("User roles:", userRolesData);
-
-        const userWithRoles: AuthUser = {
-          ...user,
-          password: undefined,
+        const authUser: AuthUser = {
+          id: user.id,
+          username: user.username,
+          role: user.role,
+          email: user.email || undefined,
           roles: userRolesData.map(r => r.roleName),
+          fullName: user.fullName || undefined,
+          location: user.location || undefined,
+          experienceLevel: user.experienceLevel || undefined,
+          workflowPosition: user.workflowPosition || undefined,
+          lastLogin: user.lastLogin || undefined
         };
 
         // Update last login timestamp
@@ -129,7 +138,7 @@ export function setupAuth(app: Express) {
           .set({ lastLogin: new Date() })
           .where(eq(users.id, user.id));
 
-        return done(null, userWithRoles);
+        return done(null, authUser);
       } catch (err) {
         console.error("Login error:", err);
         return done(err);
@@ -162,24 +171,86 @@ export function setupAuth(app: Express) {
         .innerJoin(roles, eq(userRoles.roleId, roles.id))
         .where(eq(userRoles.userId, user.id));
 
-      const userWithRoles: AuthUser = {
-        ...user,
-        password: undefined,
+      const authUser: AuthUser = {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        email: user.email || undefined,
         roles: userRolesData.map(r => r.roleName),
+        fullName: user.fullName || undefined,
+        location: user.location || undefined,
+        experienceLevel: user.experienceLevel || undefined,
+        workflowPosition: user.workflowPosition || undefined,
+        lastLogin: user.lastLogin || undefined
       };
 
-      done(null, userWithRoles);
+      done(null, authUser);
     } catch (err) {
       console.error("Deserialize error:", err);
       done(err);
     }
   });
 
-  app.post("/api/request-password-reset", async (req, res) => {
+  // Authentication endpoints
+  app.post("/api/auth/login", (req, res, next) => {
+    passport.authenticate("local", (err: any, user: Express.User | false, info: any) => {
+      if (err) {
+        return res.status(500).json({ error: "Internal server error" });
+      }
+
+      if (!user) {
+        return res.status(401).json({ error: info.message || "Authentication failed" });
+      }
+
+      req.logIn(user, (err) => {
+        if (err) {
+          return res.status(500).json({ error: "Login failed" });
+        }
+
+        return res.json({
+          user: {
+            id: user.id,
+            username: user.username,
+            role: user.role,
+            roles: user.roles,
+            email: user.email,
+          }
+        });
+      });
+    })(req, res, next);
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.logout((err) => {
+      if (err) {
+        return res.status(500).json({ error: "Logout failed" });
+      }
+      res.json({ message: "Logout successful" });
+    });
+  });
+
+  app.get("/api/auth/me", (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const user = req.user;
+    res.json({
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        roles: user.roles,
+        email: user.email,
+      }
+    });
+  });
+
+  app.post("/api/auth/request-password-reset", async (req, res) => {
     try {
       const result = passwordResetRequestSchema.safeParse(req.body);
       if (!result.success) {
-        return res.status(400).send("Invalid email address");
+        return res.status(400).json({ error: "Invalid email address" });
       }
 
       const { username } = result.data;
@@ -190,14 +261,12 @@ export function setupAuth(app: Express) {
         .limit(1);
 
       if (!user) {
-        // Don't reveal if user exists
         return res.json({ message: "If an account exists with this email, you will receive a password reset link." });
       }
 
       const token = generateResetToken();
       const expires = Date.now() + RESET_TOKEN_EXPIRES;
 
-      // Store token
       passwordResetTokens.set(token, {
         username: user.username,
         expires,
@@ -209,15 +278,15 @@ export function setupAuth(app: Express) {
       res.json({ message: "If an account exists with this email, you will receive a password reset link." });
     } catch (error) {
       console.error("Password reset request error:", error);
-      res.status(500).send("Internal server error");
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
-  app.post("/api/reset-password", async (req, res) => {
+  app.post("/api/auth/reset-password", async (req, res) => {
     try {
       const result = passwordResetSchema.safeParse(req.body);
       if (!result.success) {
-        return res.status(400).send("Invalid input");
+        return res.status(400).json({ error: "Invalid input" });
       }
 
       const { token, newPassword } = result.data;
@@ -225,76 +294,21 @@ export function setupAuth(app: Express) {
 
       if (!resetData || resetData.expires < Date.now()) {
         passwordResetTokens.delete(token);
-        return res.status(400).send("Invalid or expired reset token");
+        return res.status(400).json({ error: "Invalid or expired reset token" });
       }
 
       const hashedPassword = await hashPassword(newPassword);
 
-      // Update password in database
       await db.update(users)
         .set({ password: hashedPassword })
         .where(eq(users.username, resetData.username));
 
-      // Remove used token
       passwordResetTokens.delete(token);
 
       res.json({ message: "Password successfully reset" });
     } catch (error) {
       console.error("Password reset error:", error);
-      res.status(500).send("Internal server error");
+      res.status(500).json({ error: "Internal server error" });
     }
-  });
-
-  app.post("/api/login", (req, res, next) => {
-    console.log("Login attempt:", req.body.username);
-    console.log("Request body:", { ...req.body, password: '[REDACTED]' });
-
-    passport.authenticate("local", (err: any, user: Express.User | false, info: any) => {
-      if (err) {
-        console.error("Authentication error:", err);
-        return next(err);
-      }
-
-      if (!user) {
-        console.log("Authentication failed:", info.message);
-        return res.status(400).send(info.message ?? "Login failed");
-      }
-
-      req.logIn(user, (err) => {
-        if (err) {
-          console.error("Login error:", err);
-          return next(err);
-        }
-
-        return res.json({
-          id: user.id,
-          username: user.username,
-          role: user.role,
-          roles: user.roles,
-        });
-      });
-    })(req, res, next);
-  });
-
-  app.post("/api/logout", (req, res) => {
-    req.logout((err) => {
-      if (err) {
-        return res.status(500).send("Logout failed");
-      }
-      res.json({ message: "Logout successful" });
-    });
-  });
-
-  app.get("/api/user", (req, res) => {
-    if (req.isAuthenticated()) {
-      const user = req.user;
-      return res.json({
-        id: user.id,
-        username: user.username,
-        role: user.role,
-        roles: user.roles,
-      });
-    }
-    res.status(401).send("Not logged in");
   });
 }

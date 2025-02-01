@@ -4,22 +4,25 @@ import { useToast } from "@/hooks/use-toast";
 
 interface User {
   id: number;
-  email: string;
-  role: "admin" | "client";
-  name: string;
-  lastActivity?: Date;
-  permissions?: string[];
+  username: string;
+  role: string;
+  email?: string;
+  roles?: string[];
 }
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAdmin: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   checkPermission: (resource: string, action: "read" | "write" | "delete") => boolean;
+}
+
+interface AuthResponse {
+  user: User;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -31,8 +34,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: user = null, refetch } = useQuery<User | null>({
+  const { data: authData, refetch } = useQuery<AuthResponse>({
     queryKey: ['/api/auth/me'],
+    queryFn: async () => {
+      const response = await fetch('/api/auth/me');
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error("Not authenticated");
+        }
+        throw new Error("Failed to fetch user data");
+      }
+      return response.json();
+    },
     retry: false,
     enabled: false,
   });
@@ -43,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         await refetch();
       } catch (error) {
-        if (error instanceof Error && error.message === "Session expired") {
+        if (error instanceof Error && error.message === "Not authenticated") {
           toast({
             variant: "destructive",
             title: "Session Expired",
@@ -62,18 +75,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refetch().finally(() => setIsLoading(false));
   }, [refetch]);
 
-  const login = async (email: string, password: string) => {
+  const login = async (username: string, password: string) => {
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ username, password }),
         credentials: 'include',
       });
 
       if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error);
+        const data = await response.json();
+        throw new Error(data.error || "Login failed");
       }
 
       await refetch();
@@ -95,10 +108,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      await fetch('/api/auth/logout', {
+      const response = await fetch('/api/auth/logout', {
         method: 'POST',
         credentials: 'include',
       });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Logout failed");
+      }
+
       queryClient.clear();
       await refetch();
       toast({
@@ -107,24 +126,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
     } catch (error) {
       console.error("Logout error:", error);
+      toast({
+        variant: "destructive",
+        title: "Logout failed",
+        description: "An error occurred while logging out.",
+      });
     }
   };
 
   const resetPassword = async (email: string) => {
     try {
-      const response = await fetch('/api/auth/reset-password', {
+      const response = await fetch('/api/auth/request-password-reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ username: email }),
       });
 
       if (!response.ok) {
-        throw new Error(await response.text());
+        const data = await response.json();
+        throw new Error(data.error || "Password reset failed");
       }
 
+      const data = await response.json();
       toast({
         title: "Password Reset Requested",
-        description: "If an account exists with this email, you will receive reset instructions.",
+        description: data.message || "If an account exists with this email, you will receive reset instructions.",
       });
     } catch (error) {
       if (error instanceof Error) {
@@ -148,7 +174,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (!response.ok) {
-        throw new Error(await response.text());
+        const data = await response.json();
+        throw new Error(data.error || "Password update failed");
       }
 
       toast({
@@ -168,8 +195,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const checkPermission = (resource: string, action: "read" | "write" | "delete"): boolean => {
-    if (!user) return false;
-    if (user.role === "admin") return true;
+    if (!authData?.user) return false;
+    if (authData.user.role === "admin") return true;
 
     // Client permissions check
     const allowedActions: Record<string, ("read" | "write" | "delete")[]> = {
@@ -181,7 +208,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Check both role-based permissions and specific user permissions
     const hasRolePermission = allowedActions[resource]?.includes(action) ?? false;
-    const hasSpecificPermission = user.permissions?.includes(`${resource}:${action}`);
+    const hasSpecificPermission = authData.user.roles?.includes(`${resource}:${action}`);
 
     return hasRolePermission || !!hasSpecificPermission;
   };
@@ -189,9 +216,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider
       value={{
-        user,
+        user: authData?.user || null,
         isLoading,
-        isAdmin: user?.role === "admin",
+        isAdmin: authData?.user?.role === "admin",
         login,
         logout,
         resetPassword,
