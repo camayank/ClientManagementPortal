@@ -31,7 +31,7 @@ export const userRoles = pgTable("user_roles", {
   roleId: integer("role_id").references(() => roles.id).notNull(),
 });
 
-// Existing tables
+// Update the users table definition
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").unique().notNull(),
@@ -40,16 +40,34 @@ export const users = pgTable("users", {
     enum: [
       "admin",
       "client",
-      "manager",
-      "partner",
-      "team_lead",
-      "staff_accountant",
-      "quality_reviewer",
-      "compliance_officer"
+      "us_office_senior",
+      "us_office_reviewer",
+      "us_office_staff",
+      "us_remote_senior",
+      "us_remote_staff",
+      "offshore_team_lead",
+      "offshore_senior",
+      "offshore_junior",
+      "outsource_lead",
+      "outsource_staff",
+      "maker",
+      "checker",
+      "reviewer",
+      "intern",
+      "trainee"
     ]
   }).default("client").notNull(),
   fullName: text("full_name"),
   email: text("email"),
+  location: text("location", {
+    enum: ["us_office", "us_remote", "offshore", "outsource"]
+  }),
+  experienceLevel: text("experience_level", {
+    enum: ["senior", "mid_level", "junior", "intern", "trainee"]
+  }),
+  workflowPosition: text("workflow_position", {
+    enum: ["maker", "checker", "reviewer", "none"]
+  }).default("none"),
   lastLogin: timestamp("last_login"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -575,7 +593,7 @@ export const clientOnboardingRelations = relations(clientOnboarding, ({ one, man
     references: [users.id],
   }),
   communications: many(clientCommunications),
-  documents: many(clientOnboardingDocuments),
+    documents: many(clientOnboardingDocuments),
 }));
 
 export const clientEngagementRelations = relations(clientEngagement, ({ one }) => ({
