@@ -4,11 +4,21 @@ import type { IncomingMessage } from 'http';
 import { db } from "@db";
 import { projects, users, roles, userRoles } from "@db/schema";
 import { eq, and } from "drizzle-orm";
+import type { Session } from 'express-session';
 
 interface ExtWebSocket extends WebSocket {
   userId?: number;
   isAlive: boolean;
   userRole?: string;
+  sessionID?: string;
+}
+
+interface ExtIncomingMessage extends IncomingMessage {
+  session: Session & {
+    passport?: {
+      user?: number;
+    };
+  };
 }
 
 interface WSMessage {
@@ -19,12 +29,13 @@ interface WSMessage {
 interface VerifyClientInfo {
   origin: string;
   secure: boolean;
-  req: IncomingMessage;
+  req: ExtIncomingMessage;
 }
 
 export class WebSocketService {
   private wss: WebSocketServer;
   private clients: Map<number, ExtWebSocket> = new Map();
+  private sessionClients: Map<string, ExtWebSocket> = new Map();
 
   constructor(server: Server) {
     this.wss = new WebSocketServer({ 
@@ -37,13 +48,21 @@ export class WebSocketService {
             return callback(false);
           }
 
-          const userId = (info.req as any).session?.passport?.user;
+          // Check for valid session
+          if (!info.req.session) {
+            console.error('No session found');
+            return callback(false, 401, 'No session found');
+          }
+
+          const userId = info.req.session?.passport?.user;
           if (!userId) {
+            console.error('No user ID in session');
             return callback(false, 401, 'Authentication required');
           }
 
           // Verify user exists and get their role
           const [user] = await db.select({
+            id: users.id,
             role: users.role
           })
           .from(users)
@@ -51,11 +70,13 @@ export class WebSocketService {
           .limit(1);
 
           if (!user) {
+            console.error('User not found:', userId);
             return callback(false, 403, 'User not found');
           }
 
-          // Add user role to request for later use
+          // Add user info to request for later use
           (info.req as any).userRole = user.role;
+          (info.req as any).userId = user.id;
           callback(true);
         } catch (error) {
           console.error('WebSocket verification error:', error);
@@ -72,6 +93,7 @@ export class WebSocketService {
     const interval = setInterval(() => {
       for (const [userId, client] of this.clients) {
         if (!client.isAlive) {
+          console.log(`Terminating inactive client: ${userId}`);
           client.terminate();
           this.clients.delete(userId);
           continue;
@@ -87,14 +109,27 @@ export class WebSocketService {
   }
 
   private setupWebSocketServer() {
-    this.wss.on('connection', (ws: ExtWebSocket, req) => {
-      const userId = (req as any).session?.passport?.user;
+    this.wss.on('connection', (ws: ExtWebSocket, req: ExtIncomingMessage) => {
+      const userId = req.session?.passport?.user;
       const userRole = (req as any).userRole;
+      const sessionID = req.session.id;
+
+      if (!userId || !sessionID) {
+        console.error('Missing user info on connection');
+        ws.close(1008, 'Authentication required');
+        return;
+      }
 
       ws.userId = userId;
       ws.userRole = userRole;
+      ws.sessionID = sessionID;
       ws.isAlive = true;
+
+      // Store client references
       this.clients.set(userId, ws);
+      this.sessionClients.set(sessionID, ws);
+
+      console.log(`Client connected - UserID: ${userId}, Role: ${userRole}`);
 
       ws.on('pong', () => {
         ws.isAlive = true;
@@ -122,8 +157,12 @@ export class WebSocketService {
       });
 
       ws.on('close', () => {
+        console.log(`Client disconnected - UserID: ${userId}`);
         if (ws.userId) {
           this.clients.delete(ws.userId);
+        }
+        if (ws.sessionID) {
+          this.sessionClients.delete(ws.sessionID);
         }
       });
 
@@ -140,7 +179,10 @@ export class WebSocketService {
   }
 
   private async handleMessage(ws: ExtWebSocket, message: WSMessage) {
-    if (!ws.userId) return;
+    if (!ws.userId) {
+      console.error('Received message from unauthenticated client');
+      return;
+    }
 
     switch (message.type) {
       case 'chat':
@@ -189,7 +231,10 @@ export class WebSocketService {
   private async handleActivityUpdate(ws: ExtWebSocket, message: WSMessage) {
     const { projectId, activityType, data } = message.payload;
 
-    if (!projectId) return;
+    if (!projectId) {
+      console.error('Missing projectId in activity update');
+      return;
+    }
 
     await this.broadcastToProjectMembers(projectId, {
       type: 'activity',
@@ -206,7 +251,10 @@ export class WebSocketService {
   private async handleMilestoneUpdate(ws: ExtWebSocket, message: WSMessage) {
     const { projectId, milestoneId, status, description } = message.payload;
 
-    if (!projectId || !milestoneId) return;
+    if (!projectId || !milestoneId) {
+      console.error('Missing required fields in milestone update');
+      return;
+    }
 
     await this.broadcastToProjectMembers(projectId, {
       type: message.type,
