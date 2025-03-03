@@ -6,11 +6,10 @@ import { migrateEnhancedRoles } from "../db/migrations/migrate-enhanced-roles";
 
 async function setupSystem() {
   try {
-    // Create admin user
-    const password = "Admin@123"; // This is the password to use
-    const hashedPassword = await hashPassword(password);
-
     // Create admin user if doesn't exist
+    const adminPassword = "Admin@123";
+    const hashedAdminPassword = await hashPassword(adminPassword);
+
     const [existingAdmin] = await db.select()
       .from(users)
       .where(eq(users.username, "admin@gmail.com"))
@@ -20,9 +19,10 @@ async function setupSystem() {
       const [adminUser] = await db.insert(users)
         .values({
           username: "admin@gmail.com",
-          password: hashedPassword,
+          password: hashedAdminPassword,
           role: "admin",
-          email: "admin@gmail.com"
+          email: "admin@gmail.com",
+          fullName: "System Administrator"
         })
         .returning();
 
@@ -33,7 +33,6 @@ async function setupSystem() {
         .limit(1);
 
       if (adminRole) {
-        // Assign admin role
         await db.insert(userRoles)
           .values({
             userId: adminUser.id,
@@ -42,6 +41,43 @@ async function setupSystem() {
       }
 
       console.log("Admin user created successfully");
+    }
+
+    // Create client user if doesn't exist
+    const clientPassword = "Client@123";
+    const hashedClientPassword = await hashPassword(clientPassword);
+
+    const [existingClient] = await db.select()
+      .from(users)
+      .where(eq(users.username, "client@gmail.com"))
+      .limit(1);
+
+    if (!existingClient) {
+      const [clientUser] = await db.insert(users)
+        .values({
+          username: "client@gmail.com",
+          password: hashedClientPassword,
+          role: "client",
+          email: "client@gmail.com",
+          fullName: "Default Client"
+        })
+        .returning();
+
+      // Get client role
+      const [clientRole] = await db.select()
+        .from(roles)
+        .where(eq(roles.name, "client"))
+        .limit(1);
+
+      if (clientRole) {
+        await db.insert(userRoles)
+          .values({
+            userId: clientUser.id,
+            roleId: clientRole.id
+          });
+      }
+
+      console.log("Client user created successfully");
     }
 
     // Migrate enhanced roles
