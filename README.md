@@ -1,6 +1,30 @@
-# Client Management Portal
+# CA4CPA Web Application
 
-A comprehensive enterprise-grade client management platform designed to streamline organizational workflow through an intelligent, secure digital workspace.
+A comprehensive enterprise-grade client management platform designed for CPAs to streamline organizational workflow through an intelligent, secure digital workspace.
+
+## Project Structure
+
+```
+.
+├── frontend/
+│   └── src/
+│       ├── components/     # Reusable UI components
+│       ├── pages/         # Route-based page components
+│       ├── hooks/         # Custom React hooks
+│       └── lib/           # Utility functions and constants
+├── backend/
+│   └── src/
+│       ├── routes/        # API route handlers
+│       ├── middleware/    # Express middleware
+│       ├── services/      # Business logic
+│       └── utils/         # Helper functions
+├── db/
+│   ├── migrations/        # Database migration files
+│   └── schema.ts         # Drizzle ORM schema definitions
+└── docs/
+    ├── api/              # API documentation
+    └── setup/            # Setup and deployment guides
+```
 
 ## Features
 
@@ -17,23 +41,77 @@ A comprehensive enterprise-grade client management platform designed to streamli
 
 ## Tech Stack
 
-- Frontend: React + TypeScript with Tailwind CSS
-- Backend: Node.js + Express
-- Database: PostgreSQL with Drizzle ORM
-- Authentication: Passport.js
-- Real-time: WebSocket
-- UI Components: shadcn/ui
+- **Frontend**: React + TypeScript with shadcn/ui components
+- **Backend**: Node.js + Express
+- **Database**: PostgreSQL with Drizzle ORM
+- **Authentication**: Passport.js with session management
+- **Real-time**: WebSocket integration
+- **Styling**: Tailwind CSS
 
-## Local Development Setup
+## Development Setup
 
 ### Prerequisites
 
+- Node.js v20 or higher
+- PostgreSQL database (provided by Replit)
+- Git
+
+### Environment Variables
+
+Required environment variables (configured in Replit Secrets):
+- `DATABASE_URL`: PostgreSQL connection string
+- `SESSION_SECRET`: Secret for session management
+- Additional API keys as needed
+
+### Getting Started
+
+1. Clone the repository in Replit
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Run database migrations:
+   ```bash
+   npm run db:push
+   ```
+4. Start the development server:
+   ```bash
+   npm run dev
+   ```
+
+The application will be available at the Replit-provided URL.
+
+## Database Migrations
+
+We use Drizzle ORM for database management. Current schema includes:
+- Users and authentication
+- Client management
+- Project tracking
+- Document storage
+- Role-based permissions
+
+To update database schema:
+1. Modify `db/schema.ts`
+2. Run migration command:
+   ```bash
+   npm run db:push
+   ```
+
+## Authentication
+
+Authentication is implemented using:
+- Passport.js for user authentication
+- Express sessions for session management
+- Role-based access control (RBAC)
+- Secure password hashing with bcrypt
+
+## Local Development Setup
+### Prerequisites
 - Node.js (v18 or higher)
 - PostgreSQL (v14 or higher)
 - Git
 
 ### Installation Steps
-
 1. Clone the repository:
 ```bash
 git clone https://github.com/camayank/ClientManagementPortal.git
@@ -68,15 +146,12 @@ npm run dev
 The application will be available at `http://localhost:5000`
 
 ## AWS Deployment Guide
-
 ### Prerequisites
-
 1. AWS Account with necessary permissions
 2. AWS CLI installed and configured
 3. Domain name (optional, but recommended)
 
 ### Deployment Steps
-
 1. Create an RDS PostgreSQL Instance:
    ```bash
    aws rds create-db-instance \
@@ -116,7 +191,6 @@ The application will be available at `http://localhost:5000`
    ```
 
 ### Production Configuration
-
 1. SSL/TLS Setup:
    - Create an SSL certificate using AWS Certificate Manager
    - Configure the load balancer to use HTTPS
@@ -133,7 +207,6 @@ The application will be available at `http://localhost:5000`
    - Configure log streaming
 
 ### Security Best Practices
-
 1. Network Security:
    - Use VPC with private subnets for RDS
    - Implement proper security groups
@@ -171,13 +244,6 @@ AWS_SECRET_ACCESS_KEY=your-secret-key
 AWS_REGION=us-east-1
 ```
 
-## Database Migrations
-
-Run migrations:
-```bash
-npm run db:push
-```
-
 ## Development Scripts
 
 ```bash
@@ -196,15 +262,14 @@ npm run check
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+1. Create a new branch for features
+2. Follow the existing code style
+3. Update documentation as needed
+4. Test thoroughly before submitting changes
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is proprietary and confidential.
 
 ## Support
 

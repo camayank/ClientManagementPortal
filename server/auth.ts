@@ -50,27 +50,32 @@ async function comparePassword(password: string, hash: string): Promise<boolean>
 }
 
 export function setupAuth(app: Express) {
+  // Verify required environment variables
+  if (!process.env.SESSION_SECRET) {
+    throw new Error('SESSION_SECRET environment variable is required');
+  }
+
   const MemoryStore = createMemoryStore(session);
   const isDevelopment = app.get("env") === "development";
 
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.REPL_ID || "client-portal-secret",
+    secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     name: 'client-portal.sid',
     cookie: {
-      secure: !isDevelopment,
+      secure: !isDevelopment, // Only allow HTTPS in production
       httpOnly: true,
       maxAge: SESSION_MAX_AGE,
       sameSite: isDevelopment ? 'lax' : 'strict'
     },
     store: new MemoryStore({
-      checkPeriod: SESSION_MAX_AGE
+      checkPeriod: SESSION_MAX_AGE // Cleanup expired sessions
     })
   };
 
   if (!isDevelopment) {
-    app.set("trust proxy", 1);
+    app.set("trust proxy", 1); // Trust first proxy in production
   }
 
   app.use(session(sessionSettings));
@@ -164,7 +169,6 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // Authentication endpoints
   app.post("/api/auth/login", async (req, res, next) => {
     try {
       const validatedInput = loginSchema.safeParse(req.body);
