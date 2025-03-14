@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { AppError } from "./error-handler";
 import { rateLimit } from "express-rate-limit";
-import winston from "winston";
+import { logger } from "../utils/logger";
 
 // Extend Express.Session interface
 declare module 'express-session' {
@@ -10,23 +10,14 @@ declare module 'express-session' {
   }
 }
 
-// Setup logger
-const logger = winston.createLogger({
-  level: 'info',
-  format: winston.format.json(),
-  transports: [
-    new winston.transports.File({ filename: 'logs/auth.log' })
-  ]
-});
-
-// Rate limiting middleware
+// Rate limiting middleware for authentication routes
 export const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit each IP to 100 requests per windowMs
   message: "Too many authentication attempts, please try again later"
 });
 
-// Session configuration
+// Session configuration with secure defaults
 export const sessionConfig = {
   cookie: {
     secure: process.env.NODE_ENV === "production",
@@ -39,14 +30,14 @@ export const sessionConfig = {
   saveUninitialized: false
 };
 
-// Enhanced authentication middleware
+// Enhanced authentication middleware with logging
 export const requireAuth = (req: Request, _res: Response, next: NextFunction) => {
   if (!req.isAuthenticated()) {
     logger.warn(`Unauthenticated access attempt from IP: ${req.ip}`);
     throw new AppError("Not authenticated", 401);
   }
 
-  // Update last activity
+  // Update last activity timestamp
   if (req.session) {
     req.session.lastActivity = new Date();
   }

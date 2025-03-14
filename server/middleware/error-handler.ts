@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
 import { logger } from '../utils/logger';
-import { DatabaseError } from 'pg';
+import { Pool } from 'pg';
 
 // Custom error class for application errors
 export class AppError extends Error {
@@ -53,7 +53,7 @@ export const errorHandler = (
   }
 
   // Handle database errors
-  if (err instanceof DatabaseError) {
+  if (err instanceof Pool.DatabaseError) {
     return res.status(500).json({
       status: 'error',
       message: 'Database error',
