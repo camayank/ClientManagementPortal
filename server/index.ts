@@ -7,8 +7,10 @@ import { errorHandler } from "./middleware/error-handler";
 import { requestLogger, errorLogger } from "./utils/logger";
 import session from "express-session";
 import helmet from "helmet";
+import createMemoryStore from "memorystore";
 
 const app = express();
+const MemoryStore = createMemoryStore(session);
 
 // Trust proxy must be set before rate limiter
 app.set('trust proxy', 1);
@@ -53,14 +55,27 @@ export const sessionMiddleware = session({
   saveUninitialized: false,
   name: 'client-portal.sid',
   cookie: {
-    secure: !isDevelopment, // Only secure in production
+    secure: !isDevelopment,
     httpOnly: true,
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
     sameSite: isDevelopment ? 'lax' : 'strict'
-  }
+  },
+  store: new MemoryStore({
+    checkPeriod: 86400000 // prune expired entries every 24h
+  })
 });
 
 app.use(sessionMiddleware);
+
+// Middleware to ensure JSON responses for API routes
+app.use('/api', (err: any, req: Request, res: Response, next: NextFunction) => {
+  if (err) {
+    return res.status(err.status || 500).json({
+      error: err.message || 'Internal Server Error'
+    });
+  }
+  next();
+});
 
 // Security headers configuration - Development friendly
 if (isDevelopment) {
@@ -100,8 +115,8 @@ if (isDevelopment) {
 app.use(requestLogger);
 
 // Rate limiting
-app.use("/api/login", authLimiter);
-app.use("/api/register", authLimiter);
+app.use("/api/auth/login", authLimiter);
+app.use("/api/auth/register", authLimiter);
 app.use("/api/documents/upload", uploadLimiter);
 app.use("/api", apiLimiter);
 

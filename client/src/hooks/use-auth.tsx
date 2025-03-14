@@ -33,7 +33,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     queryKey: ['/api/auth/me'],
     queryFn: async () => {
       try {
-        const response = await fetch('/api/auth/me');
+        const response = await fetch('/api/auth/me', {
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json'
+          }
+        });
+
         if (!response.ok) {
           if (response.status === 401) {
             throw new Error("Not authenticated");
@@ -41,6 +47,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const errorData = await response.json().catch(() => ({}));
           throw new Error(errorData.error || "Failed to fetch user data");
         }
+
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          throw new Error("Invalid response format");
+        }
+
         return response.json();
       } catch (error) {
         console.error("Auth check error:", error);
@@ -80,10 +92,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         body: JSON.stringify(credentials),
         credentials: 'include',
       });
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error("Invalid response format");
+      }
 
       const data = await response.json().catch(() => ({
         error: "Invalid server response"
@@ -117,6 +137,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const response = await fetch('/api/auth/logout', {
         method: 'POST',
         credentials: 'include',
+        headers: {
+          'Accept': 'application/json'
+        }
       });
 
       if (!response.ok) {
@@ -144,7 +167,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await fetch('/api/auth/request-password-reset', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         body: JSON.stringify({ username: email }),
       });
 
@@ -175,7 +201,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await fetch('/api/auth/update-password', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         body: JSON.stringify({ currentPassword, newPassword }),
         credentials: 'include',
       });
