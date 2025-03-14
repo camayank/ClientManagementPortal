@@ -5,6 +5,7 @@ import { apiLimiter, authLimiter, uploadLimiter } from "./middleware/rate-limit"
 import { corsMiddleware, handleOptions } from "./middleware/cors";
 import { errorHandler } from "./middleware/error-handler";
 import { requestLogger, errorLogger } from "./utils/logger";
+import session from "express-session";
 import helmet from "helmet";
 
 const app = express();
@@ -44,8 +45,25 @@ app.use(handleOptions);
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// Session configuration for both HTTP and WebSocket
+const isDevelopment = app.get("env") === "development";
+export const sessionMiddleware = session({
+  secret: process.env.REPL_ID || "client-portal-secret",
+  resave: false,
+  saveUninitialized: false,
+  name: 'client-portal.sid',
+  cookie: {
+    secure: !isDevelopment, // Only secure in production
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: isDevelopment ? 'lax' : 'strict'
+  }
+});
+
+app.use(sessionMiddleware);
+
 // Security headers configuration - Development friendly
-if (app.get("env") === "development") {
+if (isDevelopment) {
   app.use(
     helmet({
       contentSecurityPolicy: false, // Disable CSP in development
@@ -95,7 +113,7 @@ app.use("/api", apiLimiter);
   app.use(errorHandler);
 
   // Static file serving based on environment
-  if (app.get("env") === "development") {
+  if (isDevelopment) {
     await setupVite(app, server);
   } else {
     serveStatic(app);
@@ -103,7 +121,7 @@ app.use("/api", apiLimiter);
 
   // Start server
   const PORT = process.env.PORT || 5000;
-  server.listen(PORT, "0.0.0.0", () => {
+  server.listen(PORT, () => {
     log(`Server running in ${app.get("env")} mode on port ${PORT}`);
   });
 })();

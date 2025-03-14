@@ -13,16 +13,11 @@ interface User {
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  isAdmin: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (data: { username: string; password: string }) => Promise<{ ok: boolean; message?: string }>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   updatePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   checkPermission: (resource: string, action: "read" | "write" | "delete") => boolean;
-}
-
-interface AuthResponse {
-  user: User;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -34,17 +29,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: authData, refetch } = useQuery<AuthResponse>({
+  const { data: authData, refetch } = useQuery<{ user: User }>({
     queryKey: ['/api/auth/me'],
     queryFn: async () => {
-      const response = await fetch('/api/auth/me');
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error("Not authenticated");
+      try {
+        const response = await fetch('/api/auth/me');
+        if (!response.ok) {
+          if (response.status === 401) {
+            throw new Error("Not authenticated");
+          }
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || "Failed to fetch user data");
         }
-        throw new Error("Failed to fetch user data");
+        return response.json();
+      } catch (error) {
+        console.error("Auth check error:", error);
+        throw error;
       }
-      return response.json();
     },
     retry: false,
     enabled: false,
@@ -75,17 +76,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refetch().finally(() => setIsLoading(false));
   }, [refetch]);
 
-  const login = async (username: string, password: string) => {
+  const login = async (credentials: { username: string; password: string }) => {
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify(credentials),
         credentials: 'include',
       });
 
+      const data = await response.json().catch(() => ({
+        error: "Invalid server response"
+      }));
+
       if (!response.ok) {
-        const data = await response.json();
         throw new Error(data.error || "Login failed");
       }
 
@@ -94,15 +98,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         title: "Welcome back!",
         description: "You have successfully logged in.",
       });
+
+      return { ok: true };
     } catch (error) {
-      if (error instanceof Error) {
-        toast({
-          variant: "destructive",
-          title: "Login failed",
-          description: error.message,
-        });
-      }
-      throw error;
+      console.error("Login error:", error);
+      const message = error instanceof Error ? error.message : "An unexpected error occurred";
+      toast({
+        variant: "destructive",
+        title: "Login failed",
+        description: message,
+      });
+      return { ok: false, message };
     }
   };
 
@@ -114,7 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (!response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         throw new Error(data.error || "Logout failed");
       }
 
@@ -143,7 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (!response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         throw new Error(data.error || "Password reset failed");
       }
 
@@ -153,6 +159,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         description: data.message || "If an account exists with this email, you will receive reset instructions.",
       });
     } catch (error) {
+      console.error("Reset password error:", error);
       if (error instanceof Error) {
         toast({
           variant: "destructive",
@@ -174,7 +181,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (!response.ok) {
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         throw new Error(data.error || "Password update failed");
       }
 
@@ -183,6 +190,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         description: "Your password has been successfully updated.",
       });
     } catch (error) {
+      console.error("Update password error:", error);
       if (error instanceof Error) {
         toast({
           variant: "destructive",
@@ -218,7 +226,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user: authData?.user || null,
         isLoading,
-        isAdmin: authData?.user?.role === "admin",
         login,
         logout,
         resetPassword,

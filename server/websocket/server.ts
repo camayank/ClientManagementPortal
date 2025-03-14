@@ -5,6 +5,7 @@ import { db } from "@db";
 import { projects, users, roles, userRoles } from "@db/schema";
 import { eq, and } from "drizzle-orm";
 import type { Session } from 'express-session';
+import type { RequestHandler } from 'express';
 
 interface ExtWebSocket extends WebSocket {
   userId?: number;
@@ -37,7 +38,7 @@ export class WebSocketService {
   private clients: Map<number, ExtWebSocket> = new Map();
   private sessionClients: Map<string, ExtWebSocket> = new Map();
 
-  constructor(server: Server) {
+  constructor(server: Server, sessionParser: RequestHandler) {
     this.wss = new WebSocketServer({ 
       server,
       path: '/ws',
@@ -48,9 +49,25 @@ export class WebSocketService {
             return callback(false);
           }
 
+          // Parse session
+          await new Promise((resolve) => {
+            sessionParser(info.req as any, {} as any, () => {
+              resolve(true);
+            });
+          });
+
+          // Log session details for debugging
+          console.log('WebSocket connection attempt:', {
+            sessionExists: !!info.req.session,
+            sessionId: info.req.session?.id,
+            hasPassport: !!info.req.session?.passport,
+            userId: info.req.session?.passport?.user,
+            cookies: info.req.headers.cookie
+          });
+
           // Check for valid session
           if (!info.req.session) {
-            console.error('No session found');
+            console.error('No session found in WebSocket connection');
             return callback(false, 401, 'No session found');
           }
 
@@ -91,16 +108,16 @@ export class WebSocketService {
 
   private startHeartbeat() {
     const interval = setInterval(() => {
-      for (const [userId, client] of this.clients) {
+      this.clients.forEach((client, userId) => {
         if (!client.isAlive) {
           console.log(`Terminating inactive client: ${userId}`);
           client.terminate();
           this.clients.delete(userId);
-          continue;
+          return;
         }
         client.isAlive = false;
         client.ping();
-      }
+      });
     }, 30000);
 
     this.wss.on('close', () => {
@@ -110,71 +127,72 @@ export class WebSocketService {
 
   private setupWebSocketServer() {
     this.wss.on('connection', (ws: ExtWebSocket, req: ExtIncomingMessage) => {
-      const userId = req.session?.passport?.user;
-      const userRole = (req as any).userRole;
-      const sessionID = req.session.id;
+      try {
+        const userId = req.session?.passport?.user;
+        const userRole = (req as any).userRole;
+        const sessionID = req.session.id;
 
-      if (!userId || !sessionID) {
-        console.error('Missing user info on connection');
-        ws.close(1008, 'Authentication required');
-        return;
-      }
+        if (!userId || !sessionID) {
+          console.error('Missing user info on connection');
+          ws.close(1008, 'Authentication required');
+          return;
+        }
 
-      ws.userId = userId;
-      ws.userRole = userRole;
-      ws.sessionID = sessionID;
-      ws.isAlive = true;
-
-      // Store client references
-      this.clients.set(userId, ws);
-      this.sessionClients.set(sessionID, ws);
-
-      console.log(`Client connected - UserID: ${userId}, Role: ${userRole}`);
-
-      ws.on('pong', () => {
+        ws.userId = userId;
+        ws.userRole = userRole;
+        ws.sessionID = sessionID;
         ws.isAlive = true;
-      });
 
-      ws.on('message', async (data: string) => {
-        try {
-          const message: WSMessage = JSON.parse(data);
-          await this.handleMessage(ws, message);
-        } catch (error) {
-          console.error('Failed to handle WebSocket message:', error);
-          this.sendToClient(ws, {
-            type: 'notification',
-            payload: {
-              type: 'error',
-              message: 'Failed to process message',
-            }
-          });
-        }
-      });
+        // Store client references
+        this.clients.set(userId, ws);
+        this.sessionClients.set(sessionID, ws);
 
-      ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
-        ws.terminate();
-      });
+        console.log(`Client connected - UserID: ${userId}, Role: ${userRole}, SessionID: ${sessionID}`);
 
-      ws.on('close', () => {
-        console.log(`Client disconnected - UserID: ${userId}`);
-        if (ws.userId) {
-          this.clients.delete(ws.userId);
-        }
-        if (ws.sessionID) {
-          this.sessionClients.delete(ws.sessionID);
-        }
-      });
+        ws.on('pong', () => {
+          ws.isAlive = true;
+        });
 
-      // Send initial connection success
-      this.sendToClient(ws, {
-        type: 'notification',
-        payload: {
-          type: 'success',
-          message: 'Connected to real-time updates',
-          timestamp: new Date().toISOString(),
-        }
-      });
+        ws.on('message', async (data: string) => {
+          try {
+            const message: WSMessage = JSON.parse(data);
+            await this.handleMessage(ws, message);
+          } catch (error) {
+            console.error('Failed to handle WebSocket message:', error);
+            this.sendToClient(ws, {
+              type: 'notification',
+              payload: {
+                type: 'error',
+                message: 'Failed to process message',
+              }
+            });
+          }
+        });
+
+        ws.on('error', (error) => {
+          console.error('WebSocket error:', error);
+          ws.terminate();
+        });
+
+        ws.on('close', () => {
+          console.log(`Client disconnected - UserID: ${userId}, SessionID: ${sessionID}`);
+          this.clients.delete(userId);
+          this.sessionClients.delete(sessionID);
+        });
+
+        // Send initial connection success
+        this.sendToClient(ws, {
+          type: 'notification',
+          payload: {
+            type: 'success',
+            message: 'Connected to real-time updates',
+            timestamp: new Date().toISOString(),
+          }
+        });
+      } catch (error) {
+        console.error('Error in WebSocket connection handler:', error);
+        ws.close(1011, 'Internal server error');
+      }
     });
   }
 

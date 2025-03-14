@@ -23,20 +23,15 @@ export function useWebSocket() {
     if (!user || wsRef.current?.readyState === WebSocket.OPEN) return;
 
     try {
-      const ws = new WebSocket(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`);
+      // Construct WebSocket URL based on current protocol and host
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      const ws = new WebSocket(`${protocol}//${host}/ws`);
       wsRef.current = ws;
 
       ws.onopen = () => {
         console.log('WebSocket connection established');
-        reconnectAttempts.current = 0; // Reset reconnect attempts on successful connection
-
-        // Send initial authentication
-        if (user) {
-          ws.send(JSON.stringify({
-            type: 'auth',
-            payload: { userId: user.id }
-          }));
-        }
+        reconnectAttempts.current = 0;
       };
 
       ws.onmessage = (event) => {
@@ -65,14 +60,17 @@ export function useWebSocket() {
 
       ws.onerror = (error) => {
         console.error('WebSocket error:', error);
-        ws.close();
+        toast({
+          variant: "destructive",
+          title: "Connection Error",
+          description: "Failed to establish real-time connection",
+        });
       };
 
       ws.onclose = (event) => {
         console.log('WebSocket connection closed:', event.code, event.reason);
         wsRef.current = null;
 
-        // Only attempt to reconnect if we haven't exceeded max attempts
         if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
           toast({
             title: "Connection Lost",
@@ -80,7 +78,6 @@ export function useWebSocket() {
             duration: 3000,
           });
 
-          // Attempt to reconnect after delay
           reconnectTimeout.current = setTimeout(() => {
             reconnectAttempts.current++;
             connect();
@@ -107,10 +104,8 @@ export function useWebSocket() {
   };
 
   const handleChatMessage = (payload: any) => {
-    // Invalidate chat messages query
     queryClient.invalidateQueries({ queryKey: ['/api/messages'] });
 
-    // Show notification for new message
     if (payload.senderId !== user?.id) {
       toast({
         title: "New Message",
@@ -120,7 +115,6 @@ export function useWebSocket() {
   };
 
   const handleActivityUpdate = (payload: any) => {
-    // Invalidate relevant queries based on activity type
     switch (payload.activityType) {
       case 'project_update':
         queryClient.invalidateQueries({ queryKey: ['/api/projects', payload.projectId] });
@@ -135,7 +129,6 @@ export function useWebSocket() {
   };
 
   const handleMilestoneUpdate = (payload: any) => {
-    // Invalidate milestone and project queries
     queryClient.invalidateQueries({ queryKey: ['/api/projects', payload.projectId] });
     queryClient.invalidateQueries({ queryKey: ['/api/milestones'] });
 
@@ -161,7 +154,6 @@ export function useWebSocket() {
     connect();
 
     return () => {
-      // Cleanup
       if (reconnectTimeout.current) {
         clearTimeout(reconnectTimeout.current);
       }

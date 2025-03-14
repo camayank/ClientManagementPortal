@@ -37,10 +37,6 @@ interface AuthUser {
   email?: string;
   roles?: string[];
   fullName?: string;
-  location?: string;
-  experienceLevel?: string;
-  workflowPosition?: string;
-  lastLogin?: Date;
 }
 
 declare global {
@@ -95,8 +91,7 @@ export function setupAuth(app: Express) {
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
-        const [user] = await db
-          .select()
+        const [user] = await db.select()
           .from(users)
           .where(eq(users.username, username))
           .limit(1);
@@ -126,17 +121,8 @@ export function setupAuth(app: Express) {
           role: user.role,
           email: user.email || undefined,
           roles: userRolesData.map(r => r.roleName),
-          fullName: user.fullName || undefined,
-          location: user.location || undefined,
-          experienceLevel: user.experienceLevel || undefined,
-          workflowPosition: user.workflowPosition || undefined,
-          lastLogin: user.lastLogin || undefined
+          fullName: user.fullName || undefined
         };
-
-        // Update last login timestamp
-        await db.update(users)
-          .set({ lastLogin: new Date() })
-          .where(eq(users.id, user.id));
 
         return done(null, authUser);
       } catch (err) {
@@ -177,11 +163,7 @@ export function setupAuth(app: Express) {
         role: user.role,
         email: user.email || undefined,
         roles: userRolesData.map(r => r.roleName),
-        fullName: user.fullName || undefined,
-        location: user.location || undefined,
-        experienceLevel: user.experienceLevel || undefined,
-        workflowPosition: user.workflowPosition || undefined,
-        lastLogin: user.lastLogin || undefined
+        fullName: user.fullName || undefined
       };
 
       done(null, authUser);
@@ -193,36 +175,44 @@ export function setupAuth(app: Express) {
 
   // Authentication endpoints
   app.post("/api/auth/login", (req, res, next) => {
-    passport.authenticate("local", (err: any, user: Express.User | false, info: any) => {
-      if (err) {
-        return res.status(500).json({ error: "Internal server error" });
-      }
-
-      if (!user) {
-        return res.status(401).json({ error: info.message || "Authentication failed" });
-      }
-
-      req.logIn(user, (err) => {
+    try {
+      passport.authenticate("local", (err: any, user: Express.User | false, info: any) => {
         if (err) {
-          return res.status(500).json({ error: "Login failed" });
+          console.error("Authentication error:", err);
+          return res.status(500).json({ error: "Internal server error" });
         }
 
-        return res.json({
-          user: {
-            id: user.id,
-            username: user.username,
-            role: user.role,
-            roles: user.roles,
-            email: user.email,
+        if (!user) {
+          return res.status(401).json({ error: info?.message || "Authentication failed" });
+        }
+
+        req.logIn(user, (loginErr) => {
+          if (loginErr) {
+            console.error("Login error:", loginErr);
+            return res.status(500).json({ error: "Login failed" });
           }
+
+          return res.json({
+            user: {
+              id: user.id,
+              username: user.username,
+              role: user.role,
+              roles: user.roles,
+              email: user.email,
+            }
+          });
         });
-      });
-    })(req, res, next);
+      })(req, res, next);
+    } catch (error) {
+      console.error("Unexpected error during login:", error);
+      res.status(500).json({ error: "An unexpected error occurred" });
+    }
   });
 
   app.post("/api/auth/logout", (req, res) => {
     req.logout((err) => {
       if (err) {
+        console.error("Logout error:", err);
         return res.status(500).json({ error: "Logout failed" });
       }
       res.json({ message: "Logout successful" });
