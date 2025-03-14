@@ -2,8 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
 import { logger } from '../utils/logger';
 import { DatabaseError } from 'pg';
-import { ValidationError } from 'zod-validation-error';
 
+// Custom error class for application errors
 export class AppError extends Error {
   statusCode: number;
   isOperational: boolean;
@@ -16,28 +16,31 @@ export class AppError extends Error {
   }
 }
 
-// Ensure all responses are JSON
-export const ensureJson = (req: Request, res: Response, next: NextFunction) => {
+// Middleware to ensure JSON responses
+export const ensureJsonResponse = (req: Request, res: Response, next: NextFunction) => {
   res.setHeader('Content-Type', 'application/json');
   next();
 };
 
+// Main error handler
 export const errorHandler = (
   err: Error,
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
+  // Log error details
   logger.error('Error:', {
     error: err,
     requestId: req.id,
     path: req.path,
     method: req.method,
     body: req.body,
+    query: req.query,
     headers: req.headers,
   });
 
-  // Handle different types of errors
+  // Handle Zod validation errors
   if (err instanceof ZodError) {
     return res.status(400).json({
       status: 'error',
@@ -49,14 +52,7 @@ export const errorHandler = (
     });
   }
 
-  if (err instanceof ValidationError) {
-    return res.status(400).json({
-      status: 'error',
-      message: 'Validation error',
-      errors: err.details
-    });
-  }
-
+  // Handle database errors
   if (err instanceof DatabaseError) {
     return res.status(500).json({
       status: 'error',
@@ -69,15 +65,15 @@ export const errorHandler = (
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({
       status: 'error',
-      message: err.message,
+      message: err.message
     });
   }
 
   // Handle authentication errors
-  if (err.name === 'UnauthorizedError' || err.message.includes('unauthorized')) {
+  if (err.name === 'UnauthorizedError' || err.message.toLowerCase().includes('unauthorized')) {
     return res.status(401).json({
       status: 'error',
-      message: 'Unauthorized access',
+      message: 'Unauthorized access'
     });
   }
 
@@ -97,13 +93,14 @@ export const errorHandler = (
   });
 };
 
-// Handle unhandled rejections and exceptions
+// Handle unhandled rejections
 process.on('unhandledRejection', (err: Error) => {
   logger.error('Unhandled Rejection:', err);
   // Give the server time to process existing requests before shutting down
   process.exit(1);
 });
 
+// Handle uncaught exceptions
 process.on('uncaughtException', (err: Error) => {
   logger.error('Uncaught Exception:', err);
   process.exit(1);

@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import { z } from "zod";
 import { logger } from "./utils/logger";
+import { AppError } from "./middleware/error-handler";
 import crypto from "crypto";
 
 const SALT_ROUNDS = 10;
@@ -45,7 +46,7 @@ async function comparePassword(password: string, hash: string): Promise<boolean>
     return await bcrypt.compare(password, hash);
   } catch (error) {
     logger.error('Error comparing passwords:', error);
-    return false;
+    throw new AppError('Authentication failed', 401);
   }
 }
 
@@ -169,36 +170,23 @@ export function setupAuth(app: Express) {
     try {
       const validatedInput = loginSchema.safeParse(req.body);
       if (!validatedInput.success) {
-        return res.status(400).json({
-          status: 'error',
-          message: 'Validation error',
-          errors: validatedInput.error.errors
-        });
+        throw new AppError('Validation error', 400);
       }
 
       passport.authenticate("local", (err: any, user: Express.User | false, info: any) => {
         if (err) {
           logger.error("Authentication error:", err);
-          return res.status(500).json({ 
-            status: 'error',
-            message: "Internal server error" 
-          });
+          throw new AppError('Internal server error', 500);
         }
 
         if (!user) {
-          return res.status(401).json({ 
-            status: 'error',
-            message: info?.message || "Authentication failed" 
-          });
+          throw new AppError(info?.message || "Authentication failed", 401);
         }
 
         req.logIn(user, (loginErr) => {
           if (loginErr) {
             logger.error("Login error:", loginErr);
-            return res.status(500).json({ 
-              status: 'error',
-              message: "Login failed" 
-            });
+            throw new AppError('Login failed', 500);
           }
 
           logger.info(`User ${user.username} logged in successfully`);
@@ -217,118 +205,134 @@ export function setupAuth(app: Express) {
         });
       })(req, res, next);
     } catch (error) {
-      logger.error("Unexpected error during login:", error);
-      res.status(500).json({ 
-        status: 'error',
-        message: "An unexpected error occurred" 
-      });
+      next(error);
     }
   });
 
-  app.post("/api/auth/logout", (req, res) => {
-    const username = req.user?.username;
-    req.logout((err) => {
-      if (err) {
-        logger.error("Logout error:", err);
-        return res.status(500).json({ 
-          status: 'error',
-          message: "Logout failed" 
-        });
-      }
-      logger.info(`User ${username} logged out successfully`);
-      res.json({ 
-        status: 'success',
-        message: "Logged out successfully" 
-      });
-    });
-  });
-
-  app.get("/api/auth/me", (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ 
-        status: 'error',
-        message: "Not authenticated" 
-      });
-    }
-
-    const user = req.user;
-    res.json({
-      status: 'success',
-      data: {
-        user: {
-          id: user.id,
-          username: user.username,
-          role: user.role,
-          roles: user.roles,
-          email: user.email,
-        }
-      }
-    });
-  });
-  //Password reset endpoints remain unchanged.
-  app.post("/api/auth/request-password-reset", async (req, res) => {
+  app.post("/api/auth/logout", (req, res, next) => {
     try {
-      const result = passwordResetRequestSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ error: "Invalid email address" });
+      const username = req.user?.username;
+      req.logout((err) => {
+        if (err) {
+          logger.error("Logout error:", err);
+          throw new AppError('Logout failed', 500);
+        }
+        logger.info(`User ${username} logged out successfully`);
+        res.json({ 
+          status: 'success',
+          message: "Logged out successfully" 
+        });
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/auth/me", (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        throw new AppError('Not authenticated', 401);
       }
 
-      const { username } = result.data;
+      const user = req.user;
+      res.json({
+        status: 'success',
+        data: {
+          user: {
+            id: user.id,
+            username: user.username,
+            role: user.role,
+            roles: user.roles,
+            email: user.email,
+          }
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Password reset endpoints
+  app.post("/api/auth/request-password-reset", async (req, res, next) => {
+    try {
+      const result = z.object({ email: z.string().email() }).safeParse(req.body);
+      if (!result.success) {
+        throw new AppError('Invalid email address', 400);
+      }
+
+      const { email } = result.data;
       const [user] = await db
         .select()
         .from(users)
-        .where(eq(users.username, username))
+        .where(eq(users.email, email))
         .limit(1);
 
       if (!user) {
-        return res.json({ message: "If an account exists with this email, you will receive a password reset link." });
+        // Don't reveal whether a user exists
+        return res.json({
+          status: 'success',
+          message: "If an account exists with this email, you will receive a password reset link."
+        });
       }
 
-      const token = generateResetToken();
-      const expires = Date.now() + RESET_TOKEN_EXPIRES;
+      // Generate and store reset token
+      const token = crypto.randomBytes(32).toString('hex');
+      const expires = Date.now() + (60 * 60 * 1000); // 1 hour
 
-      passwordResetTokens.set(token, {
-        username: user.username,
-        expires,
-      });
+      // In production, this should be stored in Redis or similar
+      // For now, we use a Map (this will be cleared on server restart)
+      const resetTokens = new Map<string, { email: string, expires: number }>();
+      resetTokens.set(token, { email, expires });
 
       // In production, send email with reset link
-      console.log(`Password reset token for ${username}: ${token}`);
+      logger.info(`Password reset token for ${email}: ${token}`);
 
-      res.json({ message: "If an account exists with this email, you will receive a password reset link." });
+      res.json({
+        status: 'success',
+        message: "If an account exists with this email, you will receive a password reset link."
+      });
     } catch (error) {
-      console.error("Password reset request error:", error);
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 
-  app.post("/api/auth/reset-password", async (req, res) => {
+  app.post("/api/auth/reset-password", async (req, res, next) => {
     try {
-      const result = passwordResetSchema.safeParse(req.body);
+      const resetSchema = z.object({
+        token: z.string(),
+        password: z.string().min(8)
+      });
+
+      const result = resetSchema.safeParse(req.body);
       if (!result.success) {
-        return res.status(400).json({ error: "Invalid input" });
+        throw new AppError('Invalid input', 400);
       }
 
-      const { token, newPassword } = result.data;
-      const resetData = passwordResetTokens.get(token);
+      const { token, password } = result.data;
+
+      // In production, get from Redis or similar
+      const resetTokens = new Map<string, { email: string, expires: number }>();
+      const resetData = resetTokens.get(token);
 
       if (!resetData || resetData.expires < Date.now()) {
-        passwordResetTokens.delete(token);
-        return res.status(400).json({ error: "Invalid or expired reset token" });
+        throw new AppError('Invalid or expired reset token', 400);
       }
 
-      const hashedPassword = await hashPassword(newPassword);
-
+      // Update password
+      const hashedPassword = await hashPassword(password);
       await db.update(users)
         .set({ password: hashedPassword })
-        .where(eq(users.username, resetData.username));
+        .where(eq(users.email, resetData.email));
 
-      passwordResetTokens.delete(token);
+      // Delete used token
+      resetTokens.delete(token);
 
-      res.json({ message: "Password successfully reset" });
+      res.json({
+        status: 'success',
+        message: "Password successfully reset"
+      });
     } catch (error) {
-      console.error("Password reset error:", error);
-      res.status(500).json({ error: "Internal server error" });
+      next(error);
     }
   });
 }

@@ -81,7 +81,7 @@ export function useWebSocket() {
           reconnectTimeout.current = setTimeout(() => {
             reconnectAttempts.current++;
             connect();
-          }, RECONNECT_INTERVAL);
+          }, RECONNECT_INTERVAL * Math.pow(2, reconnectAttempts.current)); // Exponential backoff
         } else {
           toast({
             variant: "destructive",
@@ -95,15 +95,15 @@ export function useWebSocket() {
     }
   }, [user, toast]);
 
-  const handleNotification = (payload: any) => {
+  const handleNotification = useCallback((payload: any) => {
     toast({
       title: payload.type === 'error' ? "Error" : "Notification",
       description: payload.message,
       variant: payload.type === 'error' ? "destructive" : "default",
     });
-  };
+  }, [toast]);
 
-  const handleChatMessage = (payload: any) => {
+  const handleChatMessage = useCallback((payload: any) => {
     queryClient.invalidateQueries({ queryKey: ['/api/messages'] });
 
     if (payload.senderId !== user?.id) {
@@ -112,9 +112,9 @@ export function useWebSocket() {
         description: "You have received a new message",
       });
     }
-  };
+  }, [queryClient, toast, user?.id]);
 
-  const handleActivityUpdate = (payload: any) => {
+  const handleActivityUpdate = useCallback((payload: any) => {
     switch (payload.activityType) {
       case 'project_update':
         queryClient.invalidateQueries({ queryKey: ['/api/projects', payload.projectId] });
@@ -126,9 +126,9 @@ export function useWebSocket() {
         queryClient.invalidateQueries({ queryKey: ['/api/clients'] });
         break;
     }
-  };
+  }, [queryClient]);
 
-  const handleMilestoneUpdate = (payload: any) => {
+  const handleMilestoneUpdate = useCallback((payload: any) => {
     queryClient.invalidateQueries({ queryKey: ['/api/projects', payload.projectId] });
     queryClient.invalidateQueries({ queryKey: ['/api/milestones'] });
 
@@ -136,7 +136,7 @@ export function useWebSocket() {
       title: "Milestone Update",
       description: `Project milestone has been ${payload.status}`,
     });
-  };
+  }, [queryClient, toast]);
 
   const sendMessage = useCallback((message: WebSocketMessage) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
