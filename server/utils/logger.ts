@@ -1,7 +1,7 @@
 import winston from 'winston';
 import expressWinston from 'express-winston';
 import { v4 as uuidv4 } from 'uuid';
-import type { Request, Response } from 'express';
+import type { Request } from 'express';
 
 // Custom format for structured logging
 const logFormat = winston.format.combine(
@@ -58,8 +58,9 @@ export const errorLogger = expressWinston.errorLogger({
   winstonInstance: logger,
   meta: true,
   msg: '{{err.message}}',
-  requestWhitelist: [...expressWinston.requestWhitelist, 'body'],
-  responseWhitelist: [...expressWinston.responseWhitelist, 'body'],
+  requestFilter: (req: Request, propName: string) => {
+    return req[propName as keyof Request];
+  }
 });
 
 // Extend Express Request type

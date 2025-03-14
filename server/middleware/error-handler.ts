@@ -29,7 +29,7 @@ export const errorHandler = (
   res: Response,
   next: NextFunction
 ) => {
-  // Log error details
+  // Log error details with request context
   logger.error('Error:', {
     error: err,
     requestId: req.id,

@@ -10,7 +10,6 @@ import bcrypt from "bcrypt";
 import { z } from "zod";
 import { logger } from "./utils/logger";
 import { AppError } from "./middleware/error-handler";
-import crypto from "crypto";
 
 const SALT_ROUNDS = 10;
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
@@ -251,104 +250,4 @@ export function setupAuth(app: Express) {
       next(error);
     }
   });
-
-  // Password reset endpoints
-  app.post("/api/auth/request-password-reset", async (req, res, next) => {
-    try {
-      const result = z.object({ email: z.string().email() }).safeParse(req.body);
-      if (!result.success) {
-        throw new AppError('Invalid email address', 400);
-      }
-
-      const { email } = result.data;
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.email, email))
-        .limit(1);
-
-      if (!user) {
-        // Don't reveal whether a user exists
-        return res.json({
-          status: 'success',
-          message: "If an account exists with this email, you will receive a password reset link."
-        });
-      }
-
-      // Generate and store reset token
-      const token = crypto.randomBytes(32).toString('hex');
-      const expires = Date.now() + (60 * 60 * 1000); // 1 hour
-
-      // In production, this should be stored in Redis or similar
-      // For now, we use a Map (this will be cleared on server restart)
-      const resetTokens = new Map<string, { email: string, expires: number }>();
-      resetTokens.set(token, { email, expires });
-
-      // In production, send email with reset link
-      logger.info(`Password reset token for ${email}: ${token}`);
-
-      res.json({
-        status: 'success',
-        message: "If an account exists with this email, you will receive a password reset link."
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  app.post("/api/auth/reset-password", async (req, res, next) => {
-    try {
-      const resetSchema = z.object({
-        token: z.string(),
-        password: z.string().min(8)
-      });
-
-      const result = resetSchema.safeParse(req.body);
-      if (!result.success) {
-        throw new AppError('Invalid input', 400);
-      }
-
-      const { token, password } = result.data;
-
-      // In production, get from Redis or similar
-      const resetTokens = new Map<string, { email: string, expires: number }>();
-      const resetData = resetTokens.get(token);
-
-      if (!resetData || resetData.expires < Date.now()) {
-        throw new AppError('Invalid or expired reset token', 400);
-      }
-
-      // Update password
-      const hashedPassword = await hashPassword(password);
-      await db.update(users)
-        .set({ password: hashedPassword })
-        .where(eq(users.email, resetData.email));
-
-      // Delete used token
-      resetTokens.delete(token);
-
-      res.json({
-        status: 'success',
-        message: "Password successfully reset"
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
 }
-
-const passwordResetRequestSchema = z.object({
-  username: z.string().email()
-});
-
-const passwordResetSchema = z.object({
-  token: z.string(),
-  newPassword: z.string().min(6)
-});
-
-function generateResetToken(): string {
-  return crypto.randomBytes(32).toString('hex');
-}
-
-const RESET_TOKEN_EXPIRES = 60 * 60 * 1000; // 1 hour in milliseconds
-const passwordResetTokens = new Map<string, { username: string, expires: number }>();
