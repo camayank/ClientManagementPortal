@@ -1,11 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
 import { logger } from '../utils/logger';
+import { DatabaseError } from 'pg';
+import { ValidationError } from 'zod-validation-error';
 
 export class AppError extends Error {
   statusCode: number;
   isOperational: boolean;
-  
+
   constructor(message: string, statusCode: number) {
     super(message);
     this.statusCode = statusCode;
@@ -13,6 +15,12 @@ export class AppError extends Error {
     Error.captureStackTrace(this, this.constructor);
   }
 }
+
+// Ensure all responses are JSON
+export const ensureJson = (req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Content-Type', 'application/json');
+  next();
+};
 
 export const errorHandler = (
   err: Error,
@@ -25,14 +33,35 @@ export const errorHandler = (
     requestId: req.id,
     path: req.path,
     method: req.method,
+    body: req.body,
+    headers: req.headers,
   });
 
-  // Handle Zod validation errors
+  // Handle different types of errors
   if (err instanceof ZodError) {
     return res.status(400).json({
       status: 'error',
       message: 'Validation error',
-      errors: err.errors,
+      errors: err.errors.map(e => ({
+        field: e.path.join('.'),
+        message: e.message
+      }))
+    });
+  }
+
+  if (err instanceof ValidationError) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Validation error',
+      errors: err.details
+    });
+  }
+
+  if (err instanceof DatabaseError) {
+    return res.status(500).json({
+      status: 'error',
+      message: 'Database error',
+      error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
     });
   }
 
@@ -44,19 +73,27 @@ export const errorHandler = (
     });
   }
 
-  // Handle unknown errors
-  if (process.env.NODE_ENV === 'production') {
-    return res.status(500).json({
+  // Handle authentication errors
+  if (err.name === 'UnauthorizedError' || err.message.includes('unauthorized')) {
+    return res.status(401).json({
       status: 'error',
-      message: 'Internal server error',
+      message: 'Unauthorized access',
     });
   }
 
-  // Development error response with stack trace
-  return res.status(500).json({
+  // Handle unknown errors
+  const statusCode = (err as any).statusCode || 500;
+  const message = process.env.NODE_ENV === 'production' 
+    ? 'Internal server error' 
+    : err.message;
+
+  return res.status(statusCode).json({
     status: 'error',
-    message: err.message,
-    stack: err.stack,
+    message,
+    ...(process.env.NODE_ENV === 'development' && {
+      stack: err.stack,
+      details: err
+    })
   });
 };
 
