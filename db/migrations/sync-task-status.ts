@@ -16,7 +16,7 @@ export async function syncTaskStatusWorkflow() {
       const [latestHistory] = await db.select()
         .from(taskStatusHistory)
         .where(eq(taskStatusHistory.taskId, task.id))
-        .orderBy(taskStatusHistory.createdAt, "desc")
+        .orderBy(taskStatusHistory.createdAt)
         .limit(1);
 
       if (!latestHistory || latestHistory.newStatus !== task.status) {
