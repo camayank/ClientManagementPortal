@@ -4,6 +4,7 @@ import { corsMiddleware, handleOptions } from "./middleware/cors";
 import { errorHandler } from "./middleware/error-handler";
 import { requestLogger } from "./utils/logger";
 import { createSessionMiddleware } from "./middleware/session";
+import { setupVite } from "./vite";
 import helmet from "helmet";
 
 async function startServer() {
@@ -54,6 +55,12 @@ async function startServer() {
     // Register routes
     console.log("Registering routes...");
     const server = registerRoutes(app);
+
+    // Setup Vite in development
+    if (isDevelopment) {
+      console.log("Setting up Vite dev server...");
+      await setupVite(app, server);
+    }
 
     // Error handling must be last
     console.log("Setting up error handling...");
