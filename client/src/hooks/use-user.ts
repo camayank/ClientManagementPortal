@@ -39,8 +39,11 @@ async function handleRequest(
 }
 
 async function fetchUser(): Promise<User | null> {
-  const response = await fetch('/api/user', {
-    credentials: 'include'
+  const response = await fetch('/api/auth/me', {
+    credentials: 'include',
+    headers: {
+      'Accept': 'application/json',
+    }
   });
 
   if (!response.ok) {
@@ -69,21 +72,21 @@ export function useUser() {
   });
 
   const loginMutation = useMutation<RequestResult, Error, NewUser>({
-    mutationFn: (userData) => handleRequest('/api/login', 'POST', userData),
+    mutationFn: (userData) => handleRequest('/api/auth/login', 'POST', userData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user'] });
     },
   });
 
   const logoutMutation = useMutation<RequestResult, Error>({
-    mutationFn: () => handleRequest('/api/logout', 'POST'),
+    mutationFn: () => handleRequest('/api/auth/logout', 'POST'),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user'] });
     },
   });
 
   const registerMutation = useMutation<RequestResult, Error, NewUser>({
-    mutationFn: (userData) => handleRequest('/api/register', 'POST', userData),
+    mutationFn: (userData) => handleRequest('/api/auth/register', 'POST', userData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['user'] });
     },
