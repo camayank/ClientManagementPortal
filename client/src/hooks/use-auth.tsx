@@ -55,7 +55,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         return response.json();
       } catch (error) {
-        console.error("Auth check error:", error);
+        if (error instanceof Error && error.message !== "Not authenticated") {
+          console.error("Auth check error:", error);
+        }
         throw error;
       }
     },
