@@ -187,17 +187,17 @@ export function setupAuth(app: Express) {
       passport.authenticate("local", (err: any, user: Express.User | false, info: any) => {
         if (err) {
           logger.error("Authentication error:", err);
-          throw new AppError('Internal server error', 500);
+          return next(new AppError('Internal server error', 500));
         }
 
         if (!user) {
-          throw new AppError(info?.message || "Authentication failed", 401);
+          return next(new AppError(info?.message || "Authentication failed", 401));
         }
 
         req.logIn(user, (loginErr) => {
           if (loginErr) {
             logger.error("Login error:", loginErr);
-            throw new AppError('Login failed', 500);
+            return next(new AppError('Login failed', 500));
           }
 
           logger.info(`User ${user.username} logged in successfully`);
@@ -226,7 +226,7 @@ export function setupAuth(app: Express) {
       req.logout((err) => {
         if (err) {
           logger.error("Logout error:", err);
-          throw new AppError('Logout failed', 500);
+          return next(new AppError('Logout failed', 500));
         }
         logger.info(`User ${username} logged out successfully`);
         res.json({ 
