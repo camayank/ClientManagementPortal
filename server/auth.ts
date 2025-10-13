@@ -20,6 +20,14 @@ const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+const registerSchema = z.object({
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  role: z.string().optional(),
+  email: z.string().email("Invalid email address").optional(),
+  fullName: z.string().optional(),
+});
+
 // Define the AuthUser type properly
 interface AuthUser {
   id: number;
@@ -249,6 +257,168 @@ export function setupAuth(app: Express) {
             email: user.email,
           }
         }
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Registration endpoint
+  app.post("/api/register", async (req, res, next) => {
+    try {
+      const validatedInput = registerSchema.safeParse(req.body);
+      if (!validatedInput.success) {
+        return res.status(400).json({ 
+          ok: false, 
+          message: validatedInput.error.errors[0].message 
+        });
+      }
+
+      const { username, password, role, email, fullName } = validatedInput.data;
+
+      // Validate role against allowed values
+      const allowedRoles = ['admin', 'manager', 'staff', 'client'] as const;
+      const userRole = (role && allowedRoles.includes(role as any)) ? role as typeof allowedRoles[number] : 'client';
+
+      // Check if user already exists
+      const existingUser = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
+
+      if (existingUser.length > 0) {
+        return res.status(400).json({ 
+          ok: false, 
+          message: "Username already exists" 
+        });
+      }
+
+      // Hash password and create user
+      const hashedPassword = await hashPassword(password);
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          username,
+          password: hashedPassword,
+          role: userRole,
+          email: email || null,
+          fullName: fullName || null,
+        })
+        .returning();
+
+      logger.info(`New user registered: ${username}`);
+
+      // Auto-login the user after registration
+      const authUser: AuthUser = {
+        id: newUser.id,
+        username: newUser.username,
+        role: newUser.role,
+        email: newUser.email || undefined,
+        roles: [],
+        fullName: newUser.fullName || undefined
+      };
+
+      req.logIn(authUser, (loginErr) => {
+        if (loginErr) {
+          logger.error("Auto-login error after registration:", loginErr);
+          return res.status(500).json({ 
+            ok: false, 
+            message: "Registration successful but login failed" 
+          });
+        }
+
+        return res.json({ 
+          ok: true, 
+          user: {
+            id: newUser.id,
+            username: newUser.username,
+            role: newUser.role,
+            email: newUser.email,
+          }
+        });
+      });
+    } catch (error) {
+      logger.error("Registration error:", error);
+      next(error);
+    }
+  });
+
+  // Alias routes for frontend compatibility
+  app.post("/api/login", async (req, res, next) => {
+    try {
+      const validatedInput = loginSchema.safeParse(req.body);
+      if (!validatedInput.success) {
+        throw new AppError('Validation error', 400);
+      }
+
+      passport.authenticate("local", (err: any, user: Express.User | false, info: any) => {
+        if (err) {
+          logger.error("Authentication error:", err);
+          return res.status(500).json({ ok: false, message: 'Internal server error' });
+        }
+
+        if (!user) {
+          return res.status(401).json({ ok: false, message: info?.message || "Authentication failed" });
+        }
+
+        req.logIn(user, (loginErr) => {
+          if (loginErr) {
+            logger.error("Login error:", loginErr);
+            return res.status(500).json({ ok: false, message: 'Login failed' });
+          }
+
+          logger.info(`User ${user.username} logged in successfully`);
+          return res.json({
+            ok: true,
+            user: {
+              id: user.id,
+              username: user.username,
+              role: user.role,
+              roles: user.roles,
+              email: user.email,
+            }
+          });
+        });
+      })(req, res, next);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/api/logout", (req, res, next) => {
+    try {
+      const username = req.user?.username;
+      req.logout((err) => {
+        if (err) {
+          logger.error("Logout error:", err);
+          return res.status(500).json({ ok: false, message: 'Logout failed' });
+        }
+        logger.info(`User ${username} logged out successfully`);
+        res.json({ 
+          ok: true,
+          message: "Logged out successfully" 
+        });
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/user", (req, res, next) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json(null);
+      }
+
+      const user = req.user;
+      return res.json({
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        roles: user.roles,
+        email: user.email,
+        fullName: user.fullName,
       });
     } catch (error) {
       next(error);
