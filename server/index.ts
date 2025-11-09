@@ -2,7 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { corsMiddleware, handleOptions } from "./middleware/cors";
 import { errorHandler } from "./middleware/error-handler";
-import { requestLogger } from "./utils/logger";
+import { logger, requestLogger } from "./utils/logger";
 import { createSessionMiddleware } from "./middleware/session";
 import { setupVite } from "./vite";
 import helmet from "helmet";
