@@ -23,6 +23,14 @@ import type { Request, Response, NextFunction } from "express";
 
 const router = Router();
 
+// Workload calculation configuration
+// These values can be moved to environment variables or database configuration
+const WORKLOAD_CONFIG = {
+  MAX_TASKS_PER_PERSON: parseInt(process.env.MAX_TASKS_PER_PERSON || '10', 10),
+  HOURS_PER_TASK: parseInt(process.env.HOURS_PER_TASK || '4', 10),
+  WEEKLY_WORK_HOURS: parseInt(process.env.WEEKLY_WORK_HOURS || '40', 10),
+};
+
 // Middleware to check if user is authenticated
 const requireAuth = (req: Request, res: Response, next: NextFunction) => {
   if (!req.isAuthenticated()) {
@@ -96,7 +104,10 @@ router.get("/team-members",
 
       // Add role filter if specified
       if (role && role !== 'all') {
-        conditions.push(eq(users.role, role as string));
+        const validRoles = ['admin', 'manager', 'staff', 'client'] as const;
+        if (validRoles.includes(role as any)) {
+          conditions.push(eq(users.role, role as typeof validRoles[number]));
+        }
       }
 
       // Add location filter if specified
@@ -127,9 +138,9 @@ router.get("/team-members",
               ne(tasks.status, "completed")
             ));
 
-          // Calculate workload percentage (assuming max capacity is 10 tasks)
-          const currentLoad = Math.min((assignedTasks.count / 10) * 100, 100);
-          const availableHours = 40 - (assignedTasks.count * 4); // Assuming 4 hours per task
+          // Calculate workload percentage using configurable values
+          const currentLoad = Math.min((assignedTasks.count / WORKLOAD_CONFIG.MAX_TASKS_PER_PERSON) * 100, 100);
+          const availableHours = WORKLOAD_CONFIG.WEEKLY_WORK_HOURS - (assignedTasks.count * WORKLOAD_CONFIG.HOURS_PER_TASK);
 
           return {
             ...member,

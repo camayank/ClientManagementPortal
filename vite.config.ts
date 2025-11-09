@@ -20,4 +20,13 @@ export default defineConfig({
     outDir: path.resolve(__dirname, "dist/public"),
     emptyOutDir: true,
   },
+  server: {
+    port: 5000,
+    strictPort: false,
+    hmr: {
+      port: 5000,
+      protocol: 'ws',
+      host: 'localhost',
+    },
+  },
 });

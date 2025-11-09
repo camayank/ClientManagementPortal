@@ -1,8 +1,6 @@
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import { type Express } from "express";
-import session from "express-session";
-import createMemoryStore from "memorystore";
 import { users, roles, userRoles } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
@@ -12,7 +10,6 @@ import { logger } from "./utils/logger";
 import { AppError } from "./middleware/error-handler";
 
 const SALT_ROUNDS = 10;
-const SESSION_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
 
 // User input validation schemas
 const loginSchema = z.object({
@@ -63,30 +60,9 @@ export function setupAuth(app: Express) {
     throw new Error('SESSION_SECRET environment variable is required');
   }
 
-  const MemoryStore = createMemoryStore(session);
-  const isDevelopment = app.get("env") === "development";
-
-  const sessionSettings: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    name: 'client-portal.sid',
-    cookie: {
-      secure: !isDevelopment, // Only allow HTTPS in production
-      httpOnly: true,
-      maxAge: SESSION_MAX_AGE,
-      sameSite: isDevelopment ? 'lax' : 'strict'
-    },
-    store: new MemoryStore({
-      checkPeriod: SESSION_MAX_AGE // Cleanup expired sessions
-    })
-  };
-
-  if (!isDevelopment) {
-    app.set("trust proxy", 1); // Trust first proxy in production
-  }
-
-  app.use(session(sessionSettings));
+  // Note: Session middleware is set up in server/index.ts using createSessionMiddleware()
+  // which now supports both development (MemoryStore) and production (PostgreSQL) modes
+  // We only need to initialize Passport here, not create another session
   app.use(passport.initialize());
   app.use(passport.session());
 
