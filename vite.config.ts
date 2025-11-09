@@ -22,11 +22,5 @@ export default defineConfig({
   },
   server: {
     port: 5000,
-    strictPort: false,
-    hmr: {
-      port: 5000,
-      protocol: 'ws',
-      host: 'localhost',
-    },
   },
 });
