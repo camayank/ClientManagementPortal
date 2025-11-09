@@ -40,8 +40,14 @@ export async function setupVite(app: Express, server: Server) {
       hmr: {
         server,
         port: Number(port),
-        // For Replit and similar platforms, detect the host from environment
-        host: process.env.REPL_SLUG ? undefined : 'localhost',
+        // For Replit and similar platforms, use 0.0.0.0 to bind to all interfaces
+        host: process.env.REPL_SLUG ? '0.0.0.0' : 'localhost',
+        clientPort: Number(port),
+      },
+      watch: {
+        // Prevent watching too many files that could cause restarts
+        ignored: ['**/node_modules/**', '**/dist/**', '**/.git/**', '**/uploads/**'],
+        usePolling: false,
       },
     },
     appType: "custom",
