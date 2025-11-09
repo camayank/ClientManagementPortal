@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import type { NewUser } from "@db/schema";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { UserCircle2, Users } from "lucide-react";
+import { UserCircle2, Users, Loader2 } from "lucide-react";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 
@@ -219,8 +219,15 @@ export default function AuthPage() {
                       </FormItem>
                     )}
                   />
-                  <Button type="submit" className="w-full">
-                    {isLogin ? "Login" : "Create Account"}
+                  <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
+                    {form.formState.isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {isLogin ? "Logging in..." : "Creating account..."}
+                      </>
+                    ) : (
+                      isLogin ? "Login" : "Create Account"
+                    )}
                   </Button>
 
                   {!showAdminLogin && (
@@ -277,8 +284,15 @@ export default function AuthPage() {
                     </FormItem>
                   )}
                 />
-                <Button type="submit" className="w-full">
-                  Reset Password
+                <Button type="submit" className="w-full" disabled={resetRequestForm.formState.isSubmitting}>
+                  {resetRequestForm.formState.isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Sending reset link...
+                    </>
+                  ) : (
+                    "Reset Password"
+                  )}
                 </Button>
                 <Button
                   type="button"
@@ -345,8 +359,15 @@ export default function AuthPage() {
                     </FormItem>
                   )}
                 />
-                <Button type="submit" className="w-full">
-                  Set New Password
+                <Button type="submit" className="w-full" disabled={resetForm.formState.isSubmitting}>
+                  {resetForm.formState.isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Resetting password...
+                    </>
+                  ) : (
+                    "Set New Password"
+                  )}
                 </Button>
                 <Button
                   type="button"
