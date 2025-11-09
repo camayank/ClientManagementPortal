@@ -11,13 +11,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { 
-  EyeIcon, 
-  UserPlus, 
-  Search, 
+import {
+  EyeIcon,
+  UserPlus,
+  Search,
   MoreVertical,
   Ban,
-  CheckCircle
+  CheckCircle,
+  Loader2
 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -185,7 +186,16 @@ export default function AdminClients() {
                     />
                   </div>
                   <DialogFooter>
-                    <Button type="submit">Create Client</Button>
+                    <Button type="submit" disabled={form.formState.isSubmitting}>
+                      {form.formState.isSubmitting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Creating...
+                        </>
+                      ) : (
+                        "Create Client"
+                      )}
+                    </Button>
                   </DialogFooter>
                 </form>
               </Form>

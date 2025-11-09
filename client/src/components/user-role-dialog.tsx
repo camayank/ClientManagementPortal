@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { User, Role } from "@db/schema";
 import { useState, useEffect } from "react";
+import { Loader2 } from "lucide-react";
 
 interface UserRoleDialogProps {
   open: boolean;
@@ -108,8 +109,15 @@ export default function UserRoleDialog({ open, onOpenChange, user }: UserRoleDia
           >
             Cancel
           </Button>
-          <Button onClick={handleSubmit}>
-            Save Changes
+          <Button onClick={handleSubmit} disabled={mutation.isPending}>
+            {mutation.isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              "Save Changes"
+            )}
           </Button>
         </div>
       </DialogContent>
