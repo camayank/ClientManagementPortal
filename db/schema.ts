@@ -16,6 +16,11 @@ export const users = pgTable("users", {
     enum: ["active", "inactive", "pending"]
   }).default("pending"),
   lastLogin: timestamp("last_login"),
+  workflowPosition: text("workflow_position").default("none"),
+  location: text("location"),
+  experienceLevel: text("experience_level", {
+    enum: ["junior", "mid", "senior", "lead"]
+  }),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -68,6 +73,8 @@ export const permissions = pgTable("permissions", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
   description: text("description"),
+  resource: text("resource").notNull(),
+  action: text("action").notNull(),
   scope: text("scope").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -166,6 +173,59 @@ export const documentAuditLogs = pgTable("document_audit_logs", {
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Analytics tables
+export const analyticsMetrics = pgTable("analytics_metrics", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  type: text("type", {
+    enum: ["counter", "gauge", "histogram"]
+  }).notNull(),
+  unit: text("unit"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const analyticsDataPoints = pgTable("analytics_data_points", {
+  id: serial("id").primaryKey(),
+  metricId: integer("metric_id").references(() => analyticsMetrics.id).notNull(),
+  value: integer("value").notNull(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const dashboardConfigs = pgTable("dashboard_configs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  name: text("name").notNull(),
+  layout: jsonb("layout").notNull(),
+  isDefault: boolean("is_default").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+export const dashboardWidgets = pgTable("dashboard_widgets", {
+  id: serial("id").primaryKey(),
+  dashboardId: integer("dashboard_id").references(() => dashboardConfigs.id).notNull(),
+  metricId: integer("metric_id").references(() => analyticsMetrics.id),
+  widgetType: text("widget_type").notNull(),
+  position: jsonb("position").notNull(),
+  config: jsonb("config"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const reportTemplates = pgTable("report_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  templateType: text("template_type").notNull(),
+  config: jsonb("config").notNull(),
+  createdBy: integer("created_by").references(() => users.id).notNull(),
+  isPublic: boolean("is_public").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
 });
 
 // Define relationships
@@ -274,7 +334,16 @@ export const insertDocumentTagSchema = createInsertSchema(documentTags);
 export const selectDocumentTagSchema = createSelectSchema(documentTags);
 export const insertDocumentAuditLogSchema = createInsertSchema(documentAuditLogs);
 export const selectDocumentAuditLogSchema = createSelectSchema(documentAuditLogs);
-
+export const insertAnalyticsMetricSchema = createInsertSchema(analyticsMetrics);
+export const selectAnalyticsMetricSchema = createSelectSchema(analyticsMetrics);
+export const insertAnalyticsDataPointSchema = createInsertSchema(analyticsDataPoints);
+export const selectAnalyticsDataPointSchema = createSelectSchema(analyticsDataPoints);
+export const insertDashboardConfigSchema = createInsertSchema(dashboardConfigs);
+export const selectDashboardConfigSchema = createSelectSchema(dashboardConfigs);
+export const insertDashboardWidgetSchema = createInsertSchema(dashboardWidgets);
+export const selectDashboardWidgetSchema = createSelectSchema(dashboardWidgets);
+export const insertReportTemplateSchema = createInsertSchema(reportTemplates);
+export const selectReportTemplateSchema = createSelectSchema(reportTemplates);
 
 // Types
 export type User = typeof users.$inferSelect;
@@ -301,3 +370,13 @@ export type DocumentTag = typeof documentTags.$inferSelect;
 export type NewDocumentTag = typeof documentTags.$inferInsert;
 export type DocumentAuditLog = typeof documentAuditLogs.$inferSelect;
 export type NewDocumentAuditLog = typeof documentAuditLogs.$inferInsert;
+export type AnalyticsMetric = typeof analyticsMetrics.$inferSelect;
+export type NewAnalyticsMetric = typeof analyticsMetrics.$inferInsert;
+export type AnalyticsDataPoint = typeof analyticsDataPoints.$inferSelect;
+export type NewAnalyticsDataPoint = typeof analyticsDataPoints.$inferInsert;
+export type DashboardConfig = typeof dashboardConfigs.$inferSelect;
+export type NewDashboardConfig = typeof dashboardConfigs.$inferInsert;
+export type DashboardWidget = typeof dashboardWidgets.$inferSelect;
+export type NewDashboardWidget = typeof dashboardWidgets.$inferInsert;
+export type ReportTemplate = typeof reportTemplates.$inferSelect;
+export type NewReportTemplate = typeof reportTemplates.$inferInsert;

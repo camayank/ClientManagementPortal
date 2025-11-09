@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requirePermission } from "../middleware/check-permission";
 import { apiLimiter } from "../middleware/rate-limit";
+import { logger } from "../utils/logger";
 import type { Request, Response } from "express";
 import { db } from "@db";
 import { clients } from "@db/schema";
@@ -18,7 +19,7 @@ router.get("/",
       });
       res.json(allClients);
     } catch (error: any) {
-      console.error("Error fetching clients:", error);
+      logger.error("Error fetching clients:", error);
       res.status(500).json({
         message: error.message || "Failed to fetch clients"
       });
@@ -45,7 +46,7 @@ router.post("/",
 
       res.status(201).json(newClient);
     } catch (error: any) {
-      console.error("Error creating client:", error);
+      logger.error("Error creating client:", error);
       res.status(500).json({
         message: error.message || "Failed to create client"
       });
@@ -76,7 +77,7 @@ router.patch("/:id",
 
       res.json(updatedClient);
     } catch (error: any) {
-      console.error("Error updating client:", error);
+      logger.error("Error updating client:", error);
       res.status(500).json({
         message: error.message || "Failed to update client"
       });
@@ -102,7 +103,7 @@ router.delete("/:id",
 
       res.json({ message: "Client deleted successfully", client: deletedClient });
     } catch (error: any) {
-      console.error("Error deleting client:", error);
+      logger.error("Error deleting client:", error);
       res.status(500).json({
         message: error.message || "Failed to delete client"
       });

@@ -1,9 +1,11 @@
 import { Router } from "express";
+import { logger } from "../utils/logger";
 import { requirePermission } from "../middleware/check-permission";
 import { documentLimiter } from "../middleware/rate-limit";
 import multer from "multer";
 import path from "path";
 import crypto from "crypto";
+import fs from "fs";
 import { db } from "../db/index";
 import { 
   documents, 
@@ -16,7 +18,40 @@ import { eq, and, desc } from "drizzle-orm";
 import type { Request, Response } from "express";
 
 const router = Router();
-const upload = multer({ dest: 'uploads/' });
+
+// Secure file upload configuration
+const upload = multer({
+  dest: 'uploads/',
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+    files: 1
+  },
+  fileFilter: (req, file, cb) => {
+    // Allowed MIME types
+    const allowedMimes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'text/plain',
+      'text/csv'
+    ];
+
+    // Allowed file extensions
+    const allowedExtensions = /\.(pdf|doc|docx|xls|xlsx|jpg|jpeg|png|gif|txt|csv)$/i;
+
+    if (allowedMimes.includes(file.mimetype) && allowedExtensions.test(file.originalname)) {
+      cb(null, true);
+    } else {
+      logger.warn(`Rejected file upload: ${file.originalname} (${file.mimetype})`);
+      cb(new Error(`Invalid file type. Allowed types: PDF, Word, Excel, Images (JPG, PNG, GIF), TXT, CSV`));
+    }
+  }
+});
 
 // Helper function to create audit log
 async function createAuditLog(
@@ -45,7 +80,7 @@ router.get("/classifications",
       const classifications = await db.query.documentClassifications.findMany();
       res.json(classifications);
     } catch (error: any) {
-      console.error("Error fetching classifications:", error);
+      logger.error("Error fetching classifications:", error);
       res.status(500).json({ message: "Failed to fetch classifications" });
     }
   }
@@ -74,7 +109,7 @@ router.get("/",
       await createAuditLog(0, req.user!.id, 'view', req, { action: 'list_all' });
       res.json(docs);
     } catch (error: any) {
-      console.error("Error fetching documents:", error);
+      logger.error("Error fetching documents:", error);
       res.status(500).json({ message: "Failed to fetch documents" });
     }
   }
@@ -91,7 +126,8 @@ router.post("/upload",
     }
 
     const { originalname, path: filePath, size } = req.file;
-    const contentHash = crypto.createHash('sha256').update(filePath).digest('hex');
+    const fileBuffer = fs.readFileSync(filePath);
+    const contentHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
 
     try {
       // Start transaction
@@ -152,7 +188,7 @@ router.post("/upload",
 
       res.json(result);
     } catch (error: any) {
-      console.error("Error in document upload:", error);
+      logger.error("Error in document upload:", error);
       res.status(500).json({ message: "Document upload failed" });
     }
   }
@@ -178,7 +214,7 @@ router.get("/:id/versions",
 
       res.json(versions);
     } catch (error: any) {
-      console.error("Error fetching versions:", error);
+      logger.error("Error fetching versions:", error);
       res.status(500).json({ message: "Failed to fetch versions" });
     }
   }
@@ -214,7 +250,7 @@ router.post("/:id/classify",
 
       res.json({ message: "Classification added successfully" });
     } catch (error: any) {
-      console.error("Error classifying document:", error);
+      logger.error("Error classifying document:", error);
       res.status(500).json({ message: "Failed to classify document" });
     }
   }
@@ -252,12 +288,25 @@ router.get("/:id/download/:version?",
         version: documentVersion.version,
       });
 
-      res.download(
-        path.join(process.cwd(), 'uploads', documentVersion.filename),
-        documentVersion.filename
-      );
+      // Sanitize filename to prevent path traversal
+      const safeFilename = path.normalize(documentVersion.filename).replace(/^(\.\.(\/|\\|$))+/, '');
+      const fullPath = path.join(process.cwd(), 'uploads', safeFilename);
+
+      // Verify the resolved path is still within uploads directory
+      const uploadsDir = path.join(process.cwd(), 'uploads');
+      if (!fullPath.startsWith(uploadsDir)) {
+        logger.error(`Path traversal attempt blocked: ${documentVersion.filename}`);
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Verify file exists
+      if (!fs.existsSync(fullPath)) {
+        return res.status(404).json({ message: "File not found" });
+      }
+
+      res.download(fullPath, safeFilename);
     } catch (error: any) {
-      console.error("Error downloading document:", error);
+      logger.error("Error downloading document:", error);
       res.status(500).json({ message: "Failed to download document" });
     }
   }

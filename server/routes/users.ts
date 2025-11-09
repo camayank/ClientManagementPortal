@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { logger } from "../utils/logger";
 import { requirePermission } from "../middleware/check-permission";
 import { userManagementLimiter } from "../middleware/rate-limit";
 import type { Request, Response } from "express";
@@ -58,7 +59,7 @@ router.get("/",
       if (error instanceof AppError) {
         throw error;
       }
-      console.error("Error in user management:", error);
+      logger.error("Error in user management:", error);
       throw new AppError(error.message || "User operation failed", error.statusCode || 500);
     }
   }

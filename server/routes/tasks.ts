@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { logger } from "../utils/logger";
 import { TaskService } from "../services/task.service";
 import { requirePermission } from "../middleware/check-permission";
 import { insertTaskSchema } from "@db/schema";
@@ -51,7 +52,7 @@ router.get("/",
       if (error instanceof AppError) {
         throw error;
       }
-      console.error("Error fetching tasks:", error);
+      logger.error("Error fetching tasks:", error);
       throw new AppError(error.message || "Failed to fetch tasks", error.statusCode || 500);
     }
   }
@@ -79,7 +80,7 @@ router.post("/",
       if (error instanceof AppError) {
         throw error;
       }
-      console.error("Error creating task:", error);
+      logger.error("Error creating task:", error);
       throw new AppError(error.message || "Failed to create task", error.statusCode || 500);
     }
   }
@@ -119,7 +120,7 @@ router.patch("/:id",
       if (error instanceof AppError) {
         throw error;
       }
-      console.error("Error updating task:", error);
+      logger.error("Error updating task:", error);
       throw new AppError(error.message || "Failed to update task", error.statusCode || 500);
     }
   }
@@ -137,7 +138,7 @@ router.get("/categories",
       if (error instanceof AppError) {
         throw error;
       }
-      console.error("Error fetching task categories:", error);
+      logger.error("Error fetching task categories:", error);
       throw new AppError(error.message || "Failed to fetch task categories", error.statusCode || 500);
     }
   }

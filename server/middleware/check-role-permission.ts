@@ -1,4 +1,5 @@
 import { type Request, type Response, type NextFunction } from "express";
+import { logger } from "./utils/logger";
 import { db } from "@db";
 import { roles, rolePermissions, permissions, userRoles } from "@db/schema";
 import { and, eq, inArray } from "drizzle-orm";
@@ -52,7 +53,7 @@ export async function checkRolePermission(
 
     next();
   } catch (error) {
-    console.error("Permission check error:", error);
+    logger.error("Permission check error:", error);
     res.status(500).send("Error checking permissions");
   }
 }
