@@ -1,4 +1,5 @@
 import { db } from "@db";
+import { logger } from "./utils/logger";
 import { users, roles, userRoles } from "@db/schema";
 import { eq } from "drizzle-orm";
 import { hashPassword } from "./auth";
@@ -40,7 +41,7 @@ async function setupSystem() {
           });
       }
 
-      console.log("Admin user created successfully");
+      logger.info("Admin user created successfully");
     }
 
     // Create client user if doesn't exist
@@ -77,17 +78,17 @@ async function setupSystem() {
           });
       }
 
-      console.log("Client user created successfully");
+      logger.info("Client user created successfully");
     }
 
     // Migrate enhanced roles
     await migrateEnhancedRoles();
-    console.log("Enhanced roles migration completed");
+    logger.info("Enhanced roles migration completed");
 
   } catch (error) {
-    console.error("Setup failed:", error);
+    logger.error("Setup failed:", error);
     throw error;
   }
 }
 
-setupSystem().catch(console.error);
+setupSystem().catch(logger.error);

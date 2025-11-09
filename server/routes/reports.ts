@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { logger } from "../utils/logger";
 import { requirePermission } from "../middleware/check-permission";
 import { apiLimiter } from "../middleware/rate-limit";
 import type { Request, Response } from "express";
@@ -52,7 +53,7 @@ router.get("/dashboard",
         documents: documentStats,
       });
     } catch (error: any) {
-      console.error("Error fetching dashboard stats:", error);
+      logger.error("Error fetching dashboard stats:", error);
       res.status(500).json({
         message: error.message || "Failed to fetch dashboard stats"
       });
@@ -88,7 +89,7 @@ router.get("/",
         ]
       });
     } catch (error: any) {
-      console.error("Error in reporting:", error);
+      logger.error("Error in reporting:", error);
       res.status(500).json({
         message: error.message || "Report operation failed"
       });

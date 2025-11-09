@@ -1,6 +1,7 @@
 import { db } from "@db";
 import { rolePermissions, userRoles, permissions } from "@db/schema";
 import { eq, and } from "drizzle-orm";
+import { logger } from "../utils/logger";
 import type { Request, Response, NextFunction } from "express";
 
 export async function hasPermission(userId: number, resource: string, action: string): Promise<boolean> {
@@ -25,7 +26,7 @@ export function requirePermission(resource: string, action: string) {
 
     const hasAccess = await hasPermission(req.user.id, resource, action);
     if (!hasAccess) {
-      console.log(`Permission denied for user ${req.user.id} on ${resource}:${action}`);
+      logger.warn(`Permission denied for user ${req.user.id} on ${resource}:${action}`);
       return res.status(403).send("Forbidden");
     }
 

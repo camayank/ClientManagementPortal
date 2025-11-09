@@ -15,9 +15,10 @@ import {
   insertDashboardWidgetSchema,
   insertReportTemplateSchema
 } from "@db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, gte, lte, ne, desc } from "drizzle-orm";
 import { requirePermission } from "../middleware/check-permission";
 import { AppError } from "../middleware/error-handler";
+import { logger } from "../utils/logger";
 import type { Request, Response, NextFunction } from "express";
 
 const router = Router();
@@ -48,14 +49,14 @@ router.get("/workload-metrics",
         .select({ count: sql<number>`count(*)::int` })
         .from(tasks)
         .where(and(
-          sql`${tasks.dueDate} >= ${now}`,
-          sql`${tasks.dueDate} <= ${nextWeek}`
+          gte(tasks.dueDate, now),
+          lte(tasks.dueDate, nextWeek)
         ));
 
       const [availableTeamMembers] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(users)
-        .where(sql`${users.workflowPosition} != 'none'`);
+        .where(ne(users.workflowPosition, 'none'));
 
       const [scheduledTasks] = await db
         .select({ count: sql<number>`count(*)::int` })
@@ -66,8 +67,8 @@ router.get("/workload-metrics",
         .select({ count: sql<number>`count(*)::int` })
         .from(tasks)
         .where(and(
-          eq(tasks.priority, "urgent"),
-          sql`${tasks.status} != 'completed'`
+          eq(tasks.priority, "high"),
+          ne(tasks.status, "completed")
         ));
 
       res.json({
@@ -78,7 +79,7 @@ router.get("/workload-metrics",
         urgentTasks: urgentTasks.count
       });
     } catch (error) {
-      console.error("Error fetching workload metrics:", error);
+      logger.error("Error fetching workload metrics:", error);
       throw new AppError("Failed to fetch workload metrics", 500);
     }
 });
@@ -91,16 +92,16 @@ router.get("/team-members",
     try {
       const { role, location } = req.query;
 
-      const conditions = [sql`${users.workflowPosition} != 'none'`];
+      const conditions = [ne(users.workflowPosition, 'none')];
 
       // Add role filter if specified
       if (role && role !== 'all') {
-        conditions.push(sql`${users.role} = ${role}`);
+        conditions.push(eq(users.role, role as string));
       }
 
       // Add location filter if specified
       if (location && location !== 'all') {
-        conditions.push(sql`${users.location} = ${location}`);
+        conditions.push(eq(users.location, location as string));
       }
 
       const teamMembers = await db.query.users.findMany({
@@ -123,7 +124,7 @@ router.get("/team-members",
             .from(tasks)
             .where(and(
               eq(tasks.assignedTo, member.id),
-              sql`${tasks.status} != 'completed'`
+              ne(tasks.status, "completed")
             ));
 
           // Calculate workload percentage (assuming max capacity is 10 tasks)
@@ -140,7 +141,7 @@ router.get("/team-members",
 
       res.json(teamMembersWithLoad);
     } catch (error) {
-      console.error("Error fetching team members:", error);
+      logger.error("Error fetching team members:", error);
       throw new AppError("Failed to fetch team members", 500);
     }
 });
@@ -199,14 +200,14 @@ router.get("/data-points/:metricId", requireAuth, async (req, res) => {
 
     if (start && end) {
       conditions.push(
-        sql`${analyticsDataPoints.timestamp} >= ${start}`,
-        sql`${analyticsDataPoints.timestamp} <= ${end}`
+        gte(analyticsDataPoints.timestamp, new Date(start as string)),
+        lte(analyticsDataPoints.timestamp, new Date(end as string))
       );
     }
 
     const dataPoints = await db.query.analyticsDataPoints.findMany({
       where: and(...conditions),
-      orderBy: (dataPoints) => [sql`${dataPoints.timestamp} DESC`],
+      orderBy: (dataPoints, { desc }) => [desc(dataPoints.timestamp)],
     });
 
     res.json(dataPoints);
