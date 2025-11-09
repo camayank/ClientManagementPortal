@@ -8,6 +8,7 @@ const __dirname = dirname(__filename);
 import { type Server } from "http";
 import viteConfig from "../vite.config";
 import { nanoid } from "nanoid";
+import { logger } from "./utils/logger";
 
 const viteLogger = createLogger();
 
@@ -23,6 +24,8 @@ export function log(message: string, source = "express") {
 }
 
 export async function setupVite(app: Express, server: Server) {
+  const port = process.env.PORT || 5000;
+
   const vite = await createViteServer({
     ...viteConfig,
     configFile: false,
@@ -35,7 +38,12 @@ export async function setupVite(app: Express, server: Server) {
     },
     server: {
       middlewareMode: true,
-      hmr: { server },
+      hmr: {
+        server,
+        port: Number(port),
+        // For Replit and similar platforms, detect the host from environment
+        host: process.env.REPL_SLUG ? undefined : 'localhost',
+      },
     },
     appType: "custom",
   });
