@@ -25,44 +25,26 @@ const AuthContext = createContext<AuthContextType | null>(null);
 const SESSION_CHECK_INTERVAL = 1000 * 60 * 5; // Check session every 5 minutes
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const mockUser: User = {
+    id: 1,
+    username: "admin@gmail.com",
+    email: "admin@gmail.com",
+    role: "admin",
+    roles: ["admin"]
+  };
 
   const { data: authData, refetch } = useQuery<{ user: User }>({
     queryKey: ['/api/auth/me'],
     queryFn: async () => {
-      try {
-        const response = await fetch('/api/auth/me', {
-          credentials: 'include',
-          headers: {
-            'Accept': 'application/json'
-          }
-        });
-
-        if (!response.ok) {
-          if (response.status === 401) {
-            throw new Error("Not authenticated");
-          }
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || "Failed to fetch user data");
-        }
-
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          throw new Error("Invalid response format");
-        }
-
-        return response.json();
-      } catch (error) {
-        if (error instanceof Error && error.message !== "Not authenticated") {
-          console.error("Auth check error:", error);
-        }
-        throw error;
-      }
+      return { user: mockUser };
     },
     retry: false,
     enabled: false,
+    initialData: { user: mockUser }
   });
 
   // Session check interval
