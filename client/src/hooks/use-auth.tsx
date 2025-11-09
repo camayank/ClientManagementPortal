@@ -83,12 +83,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, SESSION_CHECK_INTERVAL);
 
     return () => clearInterval(interval);
-  }, [refetch]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Initial auth check
   useEffect(() => {
     refetch().finally(() => setIsLoading(false));
-  }, [refetch]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const login = async (credentials: { username: string; password: string }) => {
     try {
