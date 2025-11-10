@@ -13,6 +13,7 @@ interface User {
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
+  isAdmin: boolean;
   login: (data: { username: string; password: string }) => Promise<{ ok: boolean; message?: string }>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -236,11 +237,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return hasRolePermission || !!hasSpecificPermission;
   };
 
+  const isAdmin = authData?.user?.role === "admin" || authData?.user?.roles?.includes("admin") || false;
+
   return (
     <AuthContext.Provider
       value={{
         user: authData?.user || null,
         isLoading,
+        isAdmin,
         login,
         logout,
         resetPassword,
