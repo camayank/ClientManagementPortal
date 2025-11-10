@@ -16,6 +16,7 @@ import {
   CheckSquare,
   Clock,
   AlertTriangle,
+  Calendar,
 } from "lucide-react";
 import { BaseLayout } from "./BaseLayout";
 import { cn } from "@/lib/utils";
@@ -116,6 +117,12 @@ function AdminSidebar() {
           icon={AlertTriangle}
           label="Escalations"
           isActive={isActive("/admin/escalations")}
+        />
+        <NavItem
+          href="/admin/compliance-calendar"
+          icon={Calendar}
+          label="Compliance Calendar"
+          isActive={isActive("/admin/compliance-calendar")}
         />
         <NavItem
           href="/admin/documents"

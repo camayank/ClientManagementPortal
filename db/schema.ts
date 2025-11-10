@@ -228,6 +228,126 @@ export const reportTemplates = pgTable("report_templates", {
   updatedAt: timestamp("updated_at"),
 });
 
+// Compliance and deadline management tables
+export const complianceDeadlines = pgTable("compliance_deadlines", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id).notNull(),
+
+  // Deadline details
+  filingType: text("filing_type").notNull(),
+  formNumber: text("form_number"),
+  jurisdiction: text("jurisdiction").notNull(),
+
+  // Dates
+  dueDate: timestamp("due_date").notNull(),
+  originalDueDate: timestamp("original_due_date"),
+  extensionGranted: boolean("extension_granted").default(false),
+  extensionDueDate: timestamp("extension_due_date"),
+
+  // Status tracking
+  status: text("status", {
+    enum: ["not_started", "in_progress", "filed", "paid", "overdue"]
+  }).default("not_started"),
+
+  // Filing details
+  filedDate: timestamp("filed_date"),
+  confirmationNumber: text("confirmation_number"),
+  amountDue: integer("amount_due"),
+  amountPaid: integer("amount_paid"),
+
+  // Assignment
+  assignedTo: integer("assigned_to").references(() => users.id),
+  priority: text("priority", {
+    enum: ["low", "medium", "high", "urgent"]
+  }).default("medium"),
+
+  // Tax year/period
+  taxYear: text("tax_year"),
+  period: text("period"),
+
+  // Metadata
+  notes: text("notes"),
+  metadata: jsonb("metadata").$type<{
+    requirements?: string[];
+    estimatedTime?: number;
+    dependencies?: number[];
+    clientNotified?: boolean;
+  }>(),
+
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
+export const deadlineTemplates = pgTable("deadline_templates", {
+  id: serial("id").primaryKey(),
+
+  // Template details
+  name: text("name").notNull(),
+  filingType: text("filing_type").notNull(),
+  formNumber: text("form_number"),
+  jurisdiction: text("jurisdiction").notNull(),
+
+  // Applicability
+  entityTypes: text("entity_types").array(),
+  frequencyRule: text("frequency_rule").notNull(),
+
+  // Due date calculation
+  relativeDueDate: text("relative_due_date").notNull(),
+
+  // Requirements
+  description: text("description"),
+  requirements: text("requirements").array(),
+  estimatedTime: integer("estimated_time"),
+
+  // Metadata
+  isActive: boolean("is_active").default(true),
+  metadata: jsonb("metadata").$type<{
+    links?: string[];
+    notes?: string;
+  }>(),
+
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const complianceAlerts = pgTable("compliance_alerts", {
+  id: serial("id").primaryKey(),
+  deadlineId: integer("deadline_id").references(() => complianceDeadlines.id).notNull(),
+
+  // Alert details
+  alertType: text("alert_type", {
+    enum: ["90_day", "60_day", "30_day", "14_day", "7_day", "overdue", "custom"]
+  }).notNull(),
+
+  // Schedule
+  scheduledFor: timestamp("scheduled_for").notNull(),
+  sentAt: timestamp("sent_at"),
+
+  // Status
+  status: text("status", {
+    enum: ["scheduled", "sent", "failed", "cancelled"]
+  }).default("scheduled"),
+
+  // Recipients
+  recipients: integer("recipients").array(),
+  recipientEmails: text("recipient_emails").array(),
+
+  // Delivery channel
+  channel: text("channel", {
+    enum: ["email", "sms", "in_app", "all"]
+  }).default("email"),
+
+  // Error tracking
+  errorMessage: text("error_message"),
+
+  // Metadata
+  metadata: jsonb("metadata").$type<{
+    templateUsed?: string;
+    emailSubject?: string;
+  }>(),
+
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Define relationships
 export const usersRelations = relations(users, ({ many }) => ({
   roles: many(userRoles),
@@ -242,6 +362,7 @@ export const clientsRelations = relations(clients, ({ one, many }) => ({
   }),
   projects: many(projects),
   documents: many(documents),
+  complianceDeadlines: many(complianceDeadlines),
 }));
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
@@ -309,6 +430,25 @@ export const documentTagsRelations = relations(documentTags, ({ one }) => ({
   }),
 }));
 
+export const complianceDeadlinesRelations = relations(complianceDeadlines, ({ one, many }) => ({
+  client: one(clients, {
+    fields: [complianceDeadlines.clientId],
+    references: [clients.id],
+  }),
+  assignee: one(users, {
+    fields: [complianceDeadlines.assignedTo],
+    references: [users.id],
+  }),
+  alerts: many(complianceAlerts),
+}));
+
+export const complianceAlertsRelations = relations(complianceAlerts, ({ one }) => ({
+  deadline: one(complianceDeadlines, {
+    fields: [complianceAlerts.deadlineId],
+    references: [complianceDeadlines.id],
+  }),
+}));
+
 // Schema validation
 export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
@@ -344,6 +484,12 @@ export const insertDashboardWidgetSchema = createInsertSchema(dashboardWidgets);
 export const selectDashboardWidgetSchema = createSelectSchema(dashboardWidgets);
 export const insertReportTemplateSchema = createInsertSchema(reportTemplates);
 export const selectReportTemplateSchema = createSelectSchema(reportTemplates);
+export const insertComplianceDeadlineSchema = createInsertSchema(complianceDeadlines);
+export const selectComplianceDeadlineSchema = createSelectSchema(complianceDeadlines);
+export const insertDeadlineTemplateSchema = createInsertSchema(deadlineTemplates);
+export const selectDeadlineTemplateSchema = createSelectSchema(deadlineTemplates);
+export const insertComplianceAlertSchema = createInsertSchema(complianceAlerts);
+export const selectComplianceAlertSchema = createSelectSchema(complianceAlerts);
 
 // Types
 export type User = typeof users.$inferSelect;
@@ -380,3 +526,9 @@ export type DashboardWidget = typeof dashboardWidgets.$inferSelect;
 export type NewDashboardWidget = typeof dashboardWidgets.$inferInsert;
 export type ReportTemplate = typeof reportTemplates.$inferSelect;
 export type NewReportTemplate = typeof reportTemplates.$inferInsert;
+export type ComplianceDeadline = typeof complianceDeadlines.$inferSelect;
+export type NewComplianceDeadline = typeof complianceDeadlines.$inferInsert;
+export type DeadlineTemplate = typeof deadlineTemplates.$inferSelect;
+export type NewDeadlineTemplate = typeof deadlineTemplates.$inferInsert;
+export type ComplianceAlert = typeof complianceAlerts.$inferSelect;
+export type NewComplianceAlert = typeof complianceAlerts.$inferInsert;
