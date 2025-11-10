@@ -106,6 +106,68 @@ export const clients = pgTable("clients", {
   updatedAt: timestamp("updated_at"),
 });
 
+// Accounting profiles for CPA-specific client data
+export const accountingProfiles = pgTable("accounting_profiles", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id).notNull().unique(),
+
+  // Entity details
+  entityType: text("entity_type", {
+    enum: ["sole_prop", "partnership", "llc", "llc_s_corp", "llc_partnership", "s_corp", "c_corp", "nonprofit"]
+  }),
+  taxClassification: text("tax_classification"), // Can differ from entityType
+  formationState: text("formation_state"), // Two-letter state code
+  formationDate: timestamp("formation_date"),
+  ein: text("ein"), // Encrypted in production
+
+  // Fiscal details
+  fiscalYearEnd: text("fiscal_year_end"), // "12/31" format
+  accountingMethod: text("accounting_method", {
+    enum: ["cash", "accrual", "hybrid"]
+  }).default("accrual"),
+
+  // State registrations
+  foreignQualifiedStates: jsonb("foreign_qualified_states").$type<Array<{
+    state: string;
+    registrationDate: string;
+    registrationNumber?: string;
+  }>>(),
+  salesTaxNexusStates: jsonb("sales_tax_nexus_states").$type<Array<{
+    state: string;
+    nexusType: "physical" | "economic" | "both";
+    registrationDate: string;
+    registrationNumber?: string;
+  }>>(),
+  payrollStates: text("payroll_states").array(), // Array of state codes
+  incomeTaxStates: text("income_tax_states").array(), // States where income tax is filed
+
+  // Software integrations
+  quickbooksCompanyId: text("quickbooks_company_id"),
+  quickbooksStatus: text("quickbooks_status", {
+    enum: ["connected", "disconnected", "error", "pending"]
+  }),
+  quickbooksLastSync: timestamp("quickbooks_last_sync"),
+  xeroOrganizationId: text("xero_organization_id"),
+  xeroStatus: text("xero_status", {
+    enum: ["connected", "disconnected", "error", "pending"]
+  }),
+  xeroLastSync: timestamp("xero_last_sync"),
+  otherIntegrations: jsonb("other_integrations").$type<Record<string, any>>(),
+
+  // Parent/subsidiary structure
+  parentClientId: integer("parent_client_id").references(() => clients.id),
+  ownershipPercentage: integer("ownership_percentage"), // 0-100
+  requiresConsolidation: boolean("requires_consolidation").default(false),
+  consolidationMethod: text("consolidation_method"), // "equity", "full_consolidation", etc.
+
+  // Additional metadata
+  notes: text("notes"),
+  metadata: jsonb("metadata").$type<Record<string, any>>(),
+
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
+});
+
 export const projects = pgTable("projects", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -363,6 +425,21 @@ export const clientsRelations = relations(clients, ({ one, many }) => ({
   projects: many(projects),
   documents: many(documents),
   complianceDeadlines: many(complianceDeadlines),
+  accountingProfile: one(accountingProfiles, {
+    fields: [clients.id],
+    references: [accountingProfiles.clientId],
+  }),
+}));
+
+export const accountingProfilesRelations = relations(accountingProfiles, ({ one }) => ({
+  client: one(clients, {
+    fields: [accountingProfiles.clientId],
+    references: [clients.id],
+  }),
+  parentClient: one(clients, {
+    fields: [accountingProfiles.parentClientId],
+    references: [clients.id],
+  }),
 }));
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
@@ -454,6 +531,8 @@ export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
 export const insertClientSchema = createInsertSchema(clients);
 export const selectClientSchema = createSelectSchema(clients);
+export const insertAccountingProfileSchema = createInsertSchema(accountingProfiles);
+export const selectAccountingProfileSchema = createSelectSchema(accountingProfiles);
 export const insertProjectSchema = createInsertSchema(projects);
 export const selectProjectSchema = createSelectSchema(projects);
 export const insertDocumentSchema = createInsertSchema(documents);
@@ -496,6 +575,8 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Client = typeof clients.$inferSelect;
 export type NewClient = typeof clients.$inferInsert;
+export type AccountingProfile = typeof accountingProfiles.$inferSelect;
+export type NewAccountingProfile = typeof accountingProfiles.$inferInsert;
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type Document = typeof documents.$inferSelect;

@@ -6,6 +6,7 @@ import clientRoutes from "./clients";
 import reportRoutes from "./reports";
 import analyticsRoutes from "./analytics";
 import complianceRoutes from "./compliance";
+import accountingProfileRoutes from "./accounting-profiles";
 
 const router = Router();
 
@@ -16,5 +17,6 @@ router.use("/clients", clientRoutes);
 router.use("/reports", reportRoutes);
 router.use("/analytics", analyticsRoutes);
 router.use("/compliance", complianceRoutes);
+router.use("/accounting-profiles", accountingProfileRoutes);
 
 export default router;
