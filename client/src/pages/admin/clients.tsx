@@ -1,5 +1,6 @@
 import { AdminLayout } from "@/components/layouts/AdminLayout";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import {
   Table,
   TableBody,
@@ -249,9 +250,11 @@ export default function AdminClients() {
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="icon">
-                        <EyeIcon className="h-4 w-4" />
-                      </Button>
+                      <Link href={`/admin/clients/${client.id}`}>
+                        <Button variant="ghost" size="icon">
+                          <EyeIcon className="h-4 w-4" />
+                        </Button>
+                      </Link>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
