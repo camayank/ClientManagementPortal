@@ -21,6 +21,7 @@ import WorkAllocation from "@/pages/admin/work-allocation";
 import QualityControl from "@/pages/admin/quality-control";
 import SLAManagement from "@/pages/admin/sla-management";
 import Escalations from "@/pages/admin/escalations";
+import ComplianceCalendar from "@/pages/admin/compliance-calendar";
 
 // Client imports
 import ClientDashboard from "@/pages/client/dashboard";
@@ -89,6 +90,7 @@ function Router() {
           <Route path="/admin/quality-control" component={() => <ProtectedRoute component={QualityControl} isAdmin={true} />} />
           <Route path="/admin/sla-management" component={() => <ProtectedRoute component={SLAManagement} isAdmin={true} />} />
           <Route path="/admin/escalations" component={() => <ProtectedRoute component={Escalations} isAdmin={true} />} />
+          <Route path="/admin/compliance-calendar" component={() => <ProtectedRoute component={ComplianceCalendar} isAdmin={true} />} />
         </>
       ) : (
         <>
