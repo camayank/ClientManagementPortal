@@ -69,6 +69,84 @@ export function TaskBoard() {
     queryKey: ["/api/tasks"],
   });
 
+  const bulkUpdateMutation = useMutation({
+    mutationFn: async ({ taskIds, updates }: { taskIds: number[], updates: any }) => {
+      return apiRequest("/api/tasks/bulk-update", {
+        method: "PATCH",
+        body: JSON.stringify({ taskIds, updates }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setSelectedTaskIds(new Set());
+      toast({
+        title: "Tasks Updated",
+        description: `${selectedTaskIds.size} task(s) updated successfully.`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update tasks. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (taskIds: number[]) => {
+      return apiRequest("/api/tasks/bulk-delete", {
+        method: "DELETE",
+        body: JSON.stringify({ taskIds }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      setSelectedTaskIds(new Set());
+      toast({
+        title: "Tasks Deleted",
+        description: `${selectedTaskIds.size} task(s) deleted successfully.`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete tasks. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const toggleTaskSelection = (taskId: number) => {
+    const newSelection = new Set(selectedTaskIds);
+    if (newSelection.has(taskId)) {
+      newSelection.delete(taskId);
+    } else {
+      newSelection.add(taskId);
+    }
+    setSelectedTaskIds(newSelection);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedTaskIds.size === tasks?.length) {
+      setSelectedTaskIds(new Set());
+    } else {
+      setSelectedTaskIds(new Set(tasks?.map(t => t.id) ?? []));
+    }
+  };
+
+  const handleBulkStatusUpdate = (status: string) => {
+    bulkUpdateMutation.mutate({
+      taskIds: Array.from(selectedTaskIds),
+      updates: { status },
+    });
+  };
+
+  const handleBulkDelete = () => {
+    bulkDeleteMutation.mutate(Array.from(selectedTaskIds));
+    setBulkDeleteDialogOpen(false);
+  };
+
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     
