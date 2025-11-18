@@ -16,12 +16,31 @@ import {
 } from "@dnd-kit/sortable";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, Trash2, Users, RefreshCw, CheckSquare, Square } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { TaskDialog } from "./task-dialog";
 import { TaskColumn } from "./task-column";
 import { useState } from "react";
 import type { Task } from "@db/schema";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 
 const COLUMNS = [
   { id: "todo", name: "To Do" },
@@ -34,7 +53,10 @@ const COLUMNS = [
 export function TaskBoard() {
   const [isNewTaskDialogOpen, setIsNewTaskDialogOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<number>>(new Set());
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   
   const sensors = useSensors(
     useSensor(PointerSensor),
