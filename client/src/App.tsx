@@ -2,8 +2,7 @@ import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
-import { AuthProvider, useAuth } from "@/hooks/use-auth";
-import { Loader2 } from "lucide-react";
+import { AuthProvider } from "@/hooks/use-auth";
 import { ErrorBoundary } from "@/hooks/use-error-boundary";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth-page";
@@ -36,80 +35,44 @@ import ClientSLA from "@/pages/client/sla";
 import ClientSupport from "@/pages/client/support";
 import ClientCommunication from "@/pages/client/communication";
 
-interface ProtectedRouteProps {
-  component: React.ComponentType;
-  isAdmin: boolean;
-}
-
-function ProtectedRoute({ component: Component, isAdmin: requireAdmin }: ProtectedRouteProps) {
-  const { user, isAdmin, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (!user || (requireAdmin && !isAdmin) || (!requireAdmin && isAdmin)) {
-    return <Redirect to="/" />;
-  }
-
-  return <Component />;
-}
-
 function Router() {
-  const { user, isLoading, isAdmin } = useAuth();
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-border" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <AuthPage />;
-  }
-
   return (
     <Switch>
-      {isAdmin ? (
-        <>
-          <Route path="/admin" component={() => <ProtectedRoute component={AdminDashboard} isAdmin={true} />} />
-          <Route path="/admin/clients/:id" component={() => <ProtectedRoute component={ClientDetail} isAdmin={true} />} />
-          <Route path="/admin/clients" component={() => <ProtectedRoute component={AdminClients} isAdmin={true} />} />
-          <Route path="/admin/client-onboarding" component={() => <ProtectedRoute component={ClientOnboarding} isAdmin={true} />} />
-          <Route path="/admin/service-packages" component={() => <ProtectedRoute component={ServicePackages} isAdmin={true} />} />
-          <Route path="/admin/documents" component={() => <ProtectedRoute component={AdminDocuments} isAdmin={true} />} />
-          <Route path="/admin/credentials" component={() => <ProtectedRoute component={AdminCredentials} isAdmin={true} />} />
-          <Route path="/admin/reports" component={() => <ProtectedRoute component={AdminReports} isAdmin={true} />} />
-          <Route path="/admin/user-roles" component={() => <ProtectedRoute component={UserRoleManagement} isAdmin={true} />} />
-          <Route path="/admin/tasks" component={() => <ProtectedRoute component={TasksPage} isAdmin={true} />} />
-          <Route path="/admin/work-allocation" component={() => <ProtectedRoute component={WorkAllocation} isAdmin={true} />} />
-          <Route path="/admin/quality-control" component={() => <ProtectedRoute component={QualityControl} isAdmin={true} />} />
-          <Route path="/admin/sla-management" component={() => <ProtectedRoute component={SLAManagement} isAdmin={true} />} />
-          <Route path="/admin/escalations" component={() => <ProtectedRoute component={Escalations} isAdmin={true} />} />
-          <Route path="/admin/compliance-calendar" component={() => <ProtectedRoute component={ComplianceCalendar} isAdmin={true} />} />
-        </>
-      ) : (
-        <>
-          <Route path="/client" component={() => <ProtectedRoute component={ClientDashboard} isAdmin={false} />} />
-          <Route path="/client/personal-info" component={() => <ProtectedRoute component={PersonalInfo} isAdmin={false} />} />
-          <Route path="/client/projects" component={() => <ProtectedRoute component={ClientProjects} isAdmin={false} />} />
-          <Route path="/client/projects/:id" component={() => <ProtectedRoute component={ProjectDetails} isAdmin={false} />} />
-          <Route path="/client/documents" component={() => <ProtectedRoute component={ClientDocuments} isAdmin={false} />} />
-          <Route path="/client/tasks" component={() => <ProtectedRoute component={TasksPage} isAdmin={false} />} />
-          <Route path="/client/quality-reviews" component={() => <ProtectedRoute component={ClientQualityReviews} isAdmin={false} />} />
-          <Route path="/client/sla" component={() => <ProtectedRoute component={ClientSLA} isAdmin={false} />} />
-          <Route path="/client/support" component={() => <ProtectedRoute component={ClientSupport} isAdmin={false} />} />
-          <Route path="/client/communication" component={() => <ProtectedRoute component={ClientCommunication} isAdmin={false} />} />
-        </>
-      )}
+      {/* Admin Routes - Accessible to all */}
+      <Route path="/admin" component={AdminDashboard} />
+      <Route path="/admin/clients/:id" component={ClientDetail} />
+      <Route path="/admin/clients" component={AdminClients} />
+      <Route path="/admin/client-onboarding" component={ClientOnboarding} />
+      <Route path="/admin/service-packages" component={ServicePackages} />
+      <Route path="/admin/documents" component={AdminDocuments} />
+      <Route path="/admin/credentials" component={AdminCredentials} />
+      <Route path="/admin/reports" component={AdminReports} />
+      <Route path="/admin/user-roles" component={UserRoleManagement} />
+      <Route path="/admin/tasks" component={TasksPage} />
+      <Route path="/admin/work-allocation" component={WorkAllocation} />
+      <Route path="/admin/quality-control" component={QualityControl} />
+      <Route path="/admin/sla-management" component={SLAManagement} />
+      <Route path="/admin/escalations" component={Escalations} />
+      <Route path="/admin/compliance-calendar" component={ComplianceCalendar} />
+
+      {/* Client Routes - Accessible to all */}
+      <Route path="/client" component={ClientDashboard} />
+      <Route path="/client/personal-info" component={PersonalInfo} />
+      <Route path="/client/projects" component={ClientProjects} />
+      <Route path="/client/projects/:id" component={ProjectDetails} />
+      <Route path="/client/documents" component={ClientDocuments} />
+      <Route path="/client/tasks" component={TasksPage} />
+      <Route path="/client/quality-reviews" component={ClientQualityReviews} />
+      <Route path="/client/sla" component={ClientSLA} />
+      <Route path="/client/support" component={ClientSupport} />
+      <Route path="/client/communication" component={ClientCommunication} />
+
+      {/* Auth page route */}
+      <Route path="/auth" component={AuthPage} />
+
+      {/* Default redirect to admin portal */}
       <Route path="/">
-        <Redirect to={isAdmin ? "/admin" : "/client"} />
+        <Redirect to="/admin" />
       </Route>
       <Route component={NotFound} />
     </Switch>
