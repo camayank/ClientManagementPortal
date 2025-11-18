@@ -1,11 +1,5 @@
 import { Users, ListTodo, AlertTriangle, TrendingUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 interface StatItemProps {
@@ -24,7 +18,7 @@ function StatItem({ icon: Icon, label, value, trend, variant = "default", toolti
     danger: "text-red-600 bg-red-50",
   };
 
-  const content = (
+  return (
     <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/80 backdrop-blur-sm border border-slate-200 hover:shadow-md transition-shadow cursor-default">
       <div className={cn("p-1.5 rounded-md", variantStyles[variant])}>
         <Icon className="h-3.5 w-3.5" />
@@ -42,23 +36,6 @@ function StatItem({ icon: Icon, label, value, trend, variant = "default", toolti
         </div>
       </div>
     </div>
-  );
-
-  if (!tooltip) {
-    return content;
-  }
-
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          {content}
-        </TooltipTrigger>
-        <TooltipContent>
-          <p className="text-xs">{tooltip}</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
   );
 }
 
