@@ -1,7 +1,7 @@
 import { Router } from "express";
 import type { Request, Response } from "express";
 import { db } from "@db";
-import { complianceDeadlines, deadlineTemplates, clients } from "@db/schema";
+import { complianceDeadlines, deadlineTemplates, clients, accountingProfiles } from "@db/schema";
 import { eq, and, gte, lte, desc, asc } from "drizzle-orm";
 import { requirePermission } from "../middleware/check-permission";
 import { apiLimiter } from "../middleware/rate-limit";
@@ -431,10 +431,23 @@ router.post("/generate/:clientId",
         });
       }
 
-      // For MVP, assume calendar year-end (12/31) and C-Corp
-      // In future, pull from accountingProfiles table
-      const entityType = "c_corp"; // Hardcoded for MVP
-      const fiscalYearEnd = new Date(`${taxYear}-12-31`);
+      // Get accounting profile for entity type and fiscal year-end
+      const [profile] = await db
+        .select()
+        .from(accountingProfiles)
+        .where(eq(accountingProfiles.clientId, parseInt(clientId)));
+
+      // Use profile data if available, otherwise use defaults
+      const entityType = profile?.entityType || "c_corp"; // Default to C-Corp
+      const fiscalYearEndStr = profile?.fiscalYearEnd || "12/31"; // Default to calendar year
+
+      // Parse fiscal year-end (format: "MM/DD")
+      const [month, day] = fiscalYearEndStr.split("/").map(Number);
+      const fiscalYearEnd = new Date(parseInt(taxYear), month - 1, day);
+
+      if (!profile) {
+        logger.warn(`No accounting profile found for client ${clientId}, using defaults (C-Corp, 12/31 FYE)`);
+      }
 
       // Get applicable templates
       const templates = await db
