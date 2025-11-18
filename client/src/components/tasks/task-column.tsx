@@ -9,13 +9,14 @@ import { format } from "date-fns";
 interface TaskColumnProps {
   id: string;
   tasks: Task[];
+  onTaskClick: (task: Task) => void;
 }
 
-export function TaskColumn({ id, tasks }: TaskColumnProps) {
+export function TaskColumn({ id, tasks, onTaskClick }: TaskColumnProps) {
   return (
     <div className="space-y-2">
       {tasks.map((task) => (
-        <SortableTask key={task.id} task={task} />
+        <SortableTask key={task.id} task={task} onClick={onTaskClick} />
       ))}
     </div>
   );
@@ -23,9 +24,10 @@ export function TaskColumn({ id, tasks }: TaskColumnProps) {
 
 interface SortableTaskProps {
   task: Task;
+  onClick: (task: Task) => void;
 }
 
-function SortableTask({ task }: SortableTaskProps) {
+function SortableTask({ task, onClick }: SortableTaskProps) {
   const {
     attributes,
     listeners,
@@ -37,6 +39,11 @@ function SortableTask({ task }: SortableTaskProps) {
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onClick(task);
   };
 
   const priorityColors = {
@@ -58,7 +65,8 @@ function SortableTask({ task }: SortableTaskProps) {
       style={style}
       {...attributes}
       {...listeners}
-      className="p-3 cursor-move hover:shadow-md transition-shadow"
+      onClick={handleClick}
+      className="p-3 cursor-pointer hover:shadow-lg hover:border-primary transition-all hover:scale-[1.02] active:scale-100"
     >
       <div className="space-y-2">
         <div className="flex items-start justify-between">
@@ -90,34 +98,7 @@ function SortableTask({ task }: SortableTaskProps) {
               <span>{format(new Date(task.dueDate), "MMM d, yyyy")}</span>
             </div>
           )}
-          {task.estimatedHours && (
-            <div className="flex items-center gap-1">
-              <Clock className="h-3 w-3" />
-              <span>{task.estimatedHours}h</span>
-            </div>
-          )}
-          {task.complexity && (
-            <Badge
-              variant="outline"
-              className={`${complexityBadges[task.complexity as keyof typeof complexityBadges]}`}
-            >
-              {task.complexity}
-            </Badge>
-          )}
         </div>
-
-        {task.taxYear && (
-          <div className="flex items-center gap-2 mt-2">
-            <Badge variant="outline" className="bg-gray-100">
-              Tax Year {task.taxYear}
-            </Badge>
-            {task.extensionRequested && (
-              <Badge variant="outline" className="bg-orange-100 text-orange-800">
-                Extended
-              </Badge>
-            )}
-          </div>
-        )}
       </div>
     </Card>
   );

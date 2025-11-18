@@ -33,6 +33,7 @@ const COLUMNS = [
 
 export function TaskBoard() {
   const [isNewTaskDialogOpen, setIsNewTaskDialogOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const { toast } = useToast();
   
   const sensors = useSensors(
@@ -116,6 +117,7 @@ export function TaskBoard() {
               <TaskColumn
                 id={column.id}
                 tasks={tasks?.filter((task) => task.status === column.id) ?? []}
+                onTaskClick={setSelectedTask}
               />
             </Card>
           ))}
@@ -125,6 +127,12 @@ export function TaskBoard() {
       <TaskDialog
         open={isNewTaskDialogOpen}
         onOpenChange={setIsNewTaskDialogOpen}
+      />
+      
+      <TaskDialog
+        open={!!selectedTask}
+        onOpenChange={(open) => !open && setSelectedTask(null)}
+        task={selectedTask || undefined}
       />
     </div>
   );
