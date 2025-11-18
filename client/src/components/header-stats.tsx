@@ -24,33 +24,39 @@ function StatItem({ icon: Icon, label, value, trend, variant = "default", toolti
     danger: "text-red-600 bg-red-50",
   };
 
+  const content = (
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/80 backdrop-blur-sm border border-slate-200 hover:shadow-md transition-shadow cursor-default">
+      <div className={cn("p-1.5 rounded-md", variantStyles[variant])}>
+        <Icon className="h-3.5 w-3.5" />
+      </div>
+      <div className="flex flex-col">
+        <span className="text-xs text-muted-foreground leading-none">{label}</span>
+        <div className="flex items-center gap-1">
+          <span className="text-sm font-bold leading-none mt-1">{value}</span>
+          {trend && (
+            <TrendingUp className={cn(
+              "h-3 w-3",
+              trend === "up" ? "text-green-600" : "text-red-600 rotate-180"
+            )} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (!tooltip) {
+    return content;
+  }
+
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/80 backdrop-blur-sm border border-slate-200 hover:shadow-md transition-shadow cursor-default">
-            <div className={cn("p-1.5 rounded-md", variantStyles[variant])}>
-              <Icon className="h-3.5 w-3.5" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-xs text-muted-foreground leading-none">{label}</span>
-              <div className="flex items-center gap-1">
-                <span className="text-sm font-bold leading-none mt-1">{value}</span>
-                {trend && (
-                  <TrendingUp className={cn(
-                    "h-3 w-3",
-                    trend === "up" ? "text-green-600" : "text-red-600 rotate-180"
-                  )} />
-                )}
-              </div>
-            </div>
-          </div>
+          {content}
         </TooltipTrigger>
-        {tooltip && (
-          <TooltipContent>
-            <p className="text-xs">{tooltip}</p>
-          </TooltipContent>
-        )}
+        <TooltipContent>
+          <p className="text-xs">{tooltip}</p>
+        </TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );
