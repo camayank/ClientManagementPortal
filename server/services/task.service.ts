@@ -189,4 +189,27 @@ export class TaskService {
       return false;
     }
   }
+
+  static async deleteTask(id: number): Promise<void> {
+    try {
+      const [task] = await db.select()
+        .from(tasks)
+        .where(eq(tasks.id, id))
+        .limit(1);
+
+      if (!task) {
+        throw new AppError("Task not found", 404);
+      }
+
+      await db.delete(tasks).where(eq(tasks.id, id));
+    } catch (error: unknown) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      throw new AppError(
+        error instanceof Error ? error.message : "Failed to delete task",
+        500
+      );
+    }
+  }
 }

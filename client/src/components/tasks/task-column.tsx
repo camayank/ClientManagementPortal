@@ -2,6 +2,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { CalendarIcon, Clock, AlertTriangle, User2 } from "lucide-react";
 import type { Task } from "@db/schema";
 import { format } from "date-fns";
@@ -10,13 +11,21 @@ interface TaskColumnProps {
   id: string;
   tasks: Task[];
   onTaskClick: (task: Task) => void;
+  selectedTaskIds: Set<number>;
+  onTaskSelect: (taskId: number) => void;
 }
 
-export function TaskColumn({ id, tasks, onTaskClick }: TaskColumnProps) {
+export function TaskColumn({ id, tasks, onTaskClick, selectedTaskIds, onTaskSelect }: TaskColumnProps) {
   return (
     <div className="space-y-2">
       {tasks.map((task) => (
-        <SortableTask key={task.id} task={task} onClick={onTaskClick} />
+        <SortableTask 
+          key={task.id} 
+          task={task} 
+          onClick={onTaskClick}
+          isSelected={selectedTaskIds.has(task.id)}
+          onSelect={onTaskSelect}
+        />
       ))}
     </div>
   );
@@ -25,9 +34,11 @@ export function TaskColumn({ id, tasks, onTaskClick }: TaskColumnProps) {
 interface SortableTaskProps {
   task: Task;
   onClick: (task: Task) => void;
+  isSelected: boolean;
+  onSelect: (taskId: number) => void;
 }
 
-function SortableTask({ task, onClick }: SortableTaskProps) {
+function SortableTask({ task, onClick, isSelected, onSelect }: SortableTaskProps) {
   const {
     attributes,
     listeners,
@@ -42,8 +53,16 @@ function SortableTask({ task, onClick }: SortableTaskProps) {
   };
 
   const handleClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('[data-checkbox]')) {
+      return;
+    }
     e.stopPropagation();
     onClick(task);
+  };
+
+  const handleCheckboxChange = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onSelect(task.id);
   };
 
   const priorityColors = {
@@ -66,10 +85,19 @@ function SortableTask({ task, onClick }: SortableTaskProps) {
       {...attributes}
       {...listeners}
       onClick={handleClick}
-      className="p-3 cursor-pointer hover:shadow-lg hover:border-primary transition-all hover:scale-[1.02] active:scale-100"
+      className={`p-3 cursor-pointer hover:shadow-lg hover:border-primary transition-all hover:scale-[1.02] active:scale-100 ${
+        isSelected ? 'ring-2 ring-primary bg-primary/5' : ''
+      }`}
     >
       <div className="space-y-2">
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-2">
+          <div 
+            data-checkbox 
+            onClick={handleCheckboxChange}
+            className="pt-0.5"
+          >
+            <Checkbox checked={isSelected} />
+          </div>
           <h4 className="font-medium flex-grow">{task.title}</h4>
           <div className="flex gap-1">
             <Badge

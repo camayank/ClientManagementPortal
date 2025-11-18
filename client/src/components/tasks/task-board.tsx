@@ -198,12 +198,78 @@ export function TaskBoard() {
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Task Board</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-bold">Task Board</h1>
+          {tasks && tasks.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={toggleSelectAll}
+            >
+              {selectedTaskIds.size === tasks.length ? (
+                <>
+                  <CheckSquare className="w-4 h-4 mr-2" />
+                  Deselect All
+                </>
+              ) : (
+                <>
+                  <Square className="w-4 h-4 mr-2" />
+                  Select All
+                </>
+              )}
+            </Button>
+          )}
+        </div>
         <Button onClick={() => setIsNewTaskDialogOpen(true)}>
           <Plus className="w-4 h-4 mr-2" />
           New Task
         </Button>
       </div>
+
+      {selectedTaskIds.size > 0 && (
+        <Card className="p-4 mb-6 bg-primary/5 border-primary/20">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="font-medium">
+                {selectedTaskIds.size} task(s) selected
+              </span>
+              
+              <div className="flex items-center gap-2">
+                <Select onValueChange={handleBulkStatusUpdate}>
+                  <SelectTrigger className="w-[180px]">
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                    <SelectValue placeholder="Change Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todo">To Do</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="in_review">In Review</SelectItem>
+                    <SelectItem value="blocked">Blocked</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setBulkDeleteDialogOpen(true)}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete Selected
+                </Button>
+              </div>
+            </div>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedTaskIds(new Set())}
+            >
+              Clear Selection
+            </Button>
+          </div>
+        </Card>
+      )}
 
       <DndContext
         sensors={sensors}
@@ -218,6 +284,8 @@ export function TaskBoard() {
                 id={column.id}
                 tasks={tasks?.filter((task) => task.status === column.id) ?? []}
                 onTaskClick={setSelectedTask}
+                selectedTaskIds={selectedTaskIds}
+                onTaskSelect={toggleTaskSelection}
               />
             </Card>
           ))}
@@ -234,6 +302,23 @@ export function TaskBoard() {
         onOpenChange={(open) => !open && setSelectedTask(null)}
         task={selectedTask || undefined}
       />
+
+      <AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedTaskIds.size} task(s)?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the selected tasks.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkDelete} className="bg-destructive text-destructive-foreground">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

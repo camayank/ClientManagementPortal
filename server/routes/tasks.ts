@@ -86,6 +86,93 @@ router.post("/",
   }
 );
 
+// Bulk update tasks (must be before /:id route)
+router.patch("/bulk-update",
+  taskLimiter,
+  requirePermission('tasks', 'update'),
+  async (req: Request, res: Response) => {
+    try {
+      const { taskIds, updates } = req.body;
+
+      if (!Array.isArray(taskIds) || taskIds.length === 0) {
+        throw new AppError("Task IDs array is required", 400);
+      }
+
+      const updateResult = updateTaskSchema.safeParse(updates);
+      if (!updateResult.success) {
+        throw new AppError("Invalid update data: " + updateResult.error.issues.map(i => i.message).join(", "), 400);
+      }
+
+      const user = req.user as any;
+      if (!user) {
+        throw new AppError("Authentication required", 401);
+      }
+
+      // Validate access to all tasks
+      for (const taskId of taskIds) {
+        const hasAccess = await TaskService.validateTaskAccess(taskId, user.id, user.role);
+        if (!hasAccess) {
+          throw new AppError(`Not authorized to update task ${taskId}`, 403);
+        }
+      }
+
+      // Update all tasks
+      const updatedTasks = await Promise.all(
+        taskIds.map((taskId: number) => TaskService.updateTask(taskId, updateResult.data))
+      );
+
+      res.json({ success: true, updatedCount: updatedTasks.length });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      logger.error("Error bulk updating tasks:", error);
+      throw new AppError(error.message || "Failed to bulk update tasks", error.statusCode || 500);
+    }
+  }
+);
+
+// Bulk delete tasks (must be before /:id route)
+router.delete("/bulk-delete",
+  taskLimiter,
+  requirePermission('tasks', 'delete'),
+  async (req: Request, res: Response) => {
+    try {
+      const { taskIds } = req.body;
+
+      if (!Array.isArray(taskIds) || taskIds.length === 0) {
+        throw new AppError("Task IDs array is required", 400);
+      }
+
+      const user = req.user as any;
+      if (!user) {
+        throw new AppError("Authentication required", 401);
+      }
+
+      // Validate access to all tasks
+      for (const taskId of taskIds) {
+        const hasAccess = await TaskService.validateTaskAccess(taskId, user.id, user.role);
+        if (!hasAccess) {
+          throw new AppError(`Not authorized to delete task ${taskId}`, 403);
+        }
+      }
+
+      // Delete all tasks
+      await Promise.all(
+        taskIds.map((taskId: number) => TaskService.deleteTask(taskId))
+      );
+
+      res.json({ success: true, deletedCount: taskIds.length });
+    } catch (error: any) {
+      if (error instanceof AppError) {
+        throw error;
+      }
+      logger.error("Error bulk deleting tasks:", error);
+      throw new AppError(error.message || "Failed to bulk delete tasks", error.statusCode || 500);
+    }
+  }
+);
+
 // Update task
 router.patch("/:id", 
   taskLimiter,
