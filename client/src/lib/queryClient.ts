@@ -1,5 +1,31 @@
 import { QueryClient } from "@tanstack/react-query";
 
+export async function apiRequest(url: string, options?: RequestInit) {
+  const res = await fetch(url, {
+    ...options,
+    credentials: "include",
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+    },
+  });
+
+  if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("Authentication required");
+    }
+
+    if (res.status >= 500) {
+      throw new Error(`Server error: ${res.status} ${res.statusText}`);
+    }
+
+    const errorText = await res.text();
+    throw new Error(errorText || `Request failed with status ${res.status}`);
+  }
+
+  return res.json();
+}
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
